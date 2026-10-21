@@ -22,7 +22,7 @@ import time
 import numpy as np
 
 from ..model import Chain, pattern, pattern_pauli_terms, I2, X2, Z2
-from .mps import MPS, keep_rank
+from .mps import MPS, truncation, imaginary_steps
 
 D = 4
 
@@ -82,12 +82,15 @@ class Purification(MPS):
 
 
 def thermal_state(L, beta, dtau, chi, tol, be):
+    """e^{-beta H_P / 2}|Phi>, normalised; the step is beta / (2 n) <= dtau so that beta is reached exactly"""
     psi = Purification.bell(L, be)
-    if beta > 0:
-        Gh, Gf = be.asarray(gate_imag(dtau / 2)), be.asarray(gate_imag(dtau))
-        for _ in range(int(round(beta / 2 / dtau))):
+    nst, tau = imaginary_steps(beta, dtau)
+    if nst:
+        Gh, Gf = be.asarray(gate_imag(tau / 2)), be.asarray(gate_imag(tau))
+        for _ in range(nst):
             psi.step(Gh, Gf, chi, tol)
             psi.normalize()
+    psi.n_steps, psi.tau = nst, tau
     return psi
 
 
@@ -143,7 +146,7 @@ def apply_mpo(psi, Ws, chi, tol):
         if k < L - 1:
             nl = t.shape[0]
             u, s, v = be.svd(t.reshape(nl * d, -1))
-            kk = keep_rank(s, 2 * chi, 1e-12)
+            kk, _ = truncation(be, s, 2 * chi, 1e-12)
             out.append(u[:, :kk].reshape(nl, d, kk))
             Cm = s[:kk, None] * v[:kk]
         else:
@@ -152,16 +155,16 @@ def apply_mpo(psi, Ws, chi, tol):
     for k in range(L - 1, 0, -1):
         l, d, r = m.A[k].shape
         u, s, v = be.svd(m.A[k].reshape(l, d * r))
-        kk = keep_rank(s, chi, tol)
+        kk, _ = truncation(be, s, chi, tol)
         m.A[k] = v[:kk].reshape(kk, d, r)
         m.A[k - 1] = be.tensordot(m.A[k - 1], u[:, :kk] * s[:kk], (2, 0))
     m.center = 0
     return m
 
 
-def centres(L, sym=True):
+def centres(L, sym=True, pat='J'):
     """first spins of the probe densities: the middle of the chain (same convention as qlc.ed probe='local')"""
-    return Chain(L, 'obc').centre_terms(sym)
+    return Chain(L, 'obc').centre_terms(sym, pat)
 
 
 def run_purification(route='split', L=64, beta=1.0, chi=256, chi_psi=192, tol=1e-10, tol_psi=1e-12, dt=0.025,
@@ -174,10 +177,14 @@ def run_purification(route='split', L=64, beta=1.0, chi=256, chi_psi=192, tol=1e
         raise ValueError("route must be 'direct' or 'split'")
     opname = op if op is not None else ('J' if route == 'direct' else 'R')
     pat = pattern(opname)
-    cs = centres(L, sym)
+    if beta < 0:
+        raise ValueError('beta must be >= 0')
+    cs = centres(L, sym, pat)
+    nst, tau_eff = imaginary_steps(beta, dtau)
     params = dict(method='spin-basis purification TEBD', route=route,
-                  op=opname if isinstance(opname, str) else str(pat), L=L, beta=beta, chi=chi, chi_psi=chi_psi,
-                  tol=tol, tol_psi=tol_psi, dt=dt, dtau=dtau, centres=cs, sym=int(sym))
+                  op=opname if isinstance(opname, str) else str(sorted(pat.items())), L=L, beta=beta, chi=chi,
+                  chi_psi=chi_psi, tol=tol, tol_psi=tol_psi, dt=dt, dtau=dtau, dtau_eff=tau_eff, n_im_steps=nst,
+                  centres=cs, sym=int(sym))
     nsteps = int(round(tmax / 2 / dt))
     t0 = time.time()
     lostA = lostB = 0.0
@@ -191,25 +198,35 @@ def run_purification(route='split', L=64, beta=1.0, chi=256, chi_psi=192, tol=1e
         A, B = Purification.from_numpy(st['A'], be), Purification.from_numpy(st['B'], be)
         res, lostA, lostB, n0 = st['res'], st['lostA'], st['lostB'], st['n'] + 1
         res.pop('status', None)
+        res.setdefault('backends', [res.get('backend')]).append(be.name)
+        res['backend'] = be.name
         if log:
             log(f'resumed from {ckpt} at t = {2 * st["n"] * dt:.4f}')
     else:
         psi = None
+        key = dict(L=L, beta=beta, dtau=dtau, chi_psi=chi_psi, tol_psi=tol_psi, version=2)
         if psi_file and os.path.exists(psi_file):
             with open(psi_file, 'rb') as f:
                 d = pickle.load(f)
-            assert (d['L'], d['beta'], d['dtau'], d['chi_psi']) == (L, beta, dtau, chi_psi), 'psi_file parameters differ'
+            bad = {k: (d.get(k), v) for k, v in key.items() if d.get(k) != v}
+            if bad:
+                raise ValueError(f'psi_file {psi_file} was made with different parameters: {bad}')
             psi = Purification.from_numpy(d, be)
             if log:
                 log(f'loaded thermal state from {psi_file}')
         if psi is None:
             psi = thermal_state(L, beta, dtau, chi_psi, tol_psi, be)
             if psi_file:
-                with open(psi_file, 'wb') as f:
-                    pickle.dump(dict(L=L, beta=beta, dtau=dtau, chi_psi=chi_psi, **psi.to_numpy()), f)
+                os.makedirs(os.path.dirname(os.path.abspath(psi_file)), exist_ok=True)
+                tmp = f'{psi_file}.{os.getpid()}.tmp'
+                with open(tmp, 'wb') as f:
+                    pickle.dump(dict(key, **psi.to_numpy()), f)
+                os.replace(tmp, psi_file)
         B = apply_mpo(psi, operator_mpo(pat, L, set(cs), 1.0 / len(cs)), chi, tol)
         A = apply_mpo(psi, operator_mpo(pat, L, set(range(L))), chi, tol)
-        res = dict(params, psi_bond=psi.bond(), samples=[])
+        res = dict(params, psi_bond=psi.bond(), samples=[], backend=be.name)
+        # connected correlation: subtract <O><o_c> (zero for the currents, which are K-odd)
+        res['disconnected'] = (psi.overlap(A) * psi.overlap(B)).real
         if route == 'split' and op is None:
             Jtot = apply_mpo(psi, operator_mpo('J', L, set(range(L))), chi, tol)
             jc = apply_mpo(psi, operator_mpo('J', L, set(cs), 1.0 / len(cs)), chi, tol)
@@ -225,7 +242,7 @@ def run_purification(route='split', L=64, beta=1.0, chi=256, chi_psi=192, tol=1e
         if n > 0:
             lostB += B.step(Ghp, Gfp, chi, tol)
             lostA += A.step(Ghm, Gfm, chi, tol)
-        Ct = A.overlap(B)
+        Ct = A.overlap(B) - res['disconnected']
         row = dict(t=2 * n * dt, C=[Ct.real, Ct.imag], bondA=A.bond(), bondB=B.bond(), lostA=lostA, lostB=lostB,
                    elapsed_s=time.time() - t0)
         res['samples'].append(row)

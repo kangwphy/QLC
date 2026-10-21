@@ -32,8 +32,8 @@ $$D(T) = \lim_{\tau\to\infty}\frac1\tau\int_0^\tau dt\,\lim_{N\to\infty}\frac{\l
 * Finite ring (ED): $D_N(\beta)=\frac{1}{NZ}\sum_{E_m=E_n}e^{-\beta E_m}|J_{mn}|^2$ (infinite-time average).
 * Open chain: $J=i[H,P]$ has no matrix elements inside degenerate blocks, so $D_N^{\rm obc}=0$ exactly; bulk
   information is in $C(t)$ before the light cone reaches the ends.
-* Infinite chain (MPO / MPS): $C_J(t)=\sum_x\langle j_x(t)j_0\rangle_\beta$ (real part); $D$ is its long-time
-  value.  $C_J(t)-D$ oscillates at the band-top frequency $3\sqrt3$ with an amplitude $\sim t^{-3}$, so a mean
+* Infinite chain (MPO / MPS): $C_J(t)=\sum_x\langle j_x(t)j_0\rangle_\beta$; at $\beta>0$ it is complex
+  ($C(t)^*=C(-t)$, $\mathrm{Im}\,C=\langle[J(t),J]\rangle/2i$) and $D$ is the long-time value of its real part.  $C_J(t)-D$ oscillates at the band-top frequency $3\sqrt3$ with an amplitude $\sim t^{-3}$, so a mean
   over full periods (`analysis.plateau`) or a tail fit converges fast; the running mean
   $\frac1\tau\int_0^\tau C_J$ carries a $\mathfrak L/(2\tau)$ bias from the diffusive part.
 
@@ -46,10 +46,11 @@ $$D(T) = \lim_{\tau\to\infty}\frac1\tau\int_0^\tau dt\,\lim_{N\to\infty}\frac{\l
 | $\varepsilon^2(\theta)$ | $(1+2\cos2\theta)^3/(4\cos^2\theta)$ | Eq. (39) |
 | $D_N(\infty)$ | 18.7897 (14), 18.7297 (18), 18.7029 (22), 18.6845 (26), 18.6708 (30) | note Sec. 4.4, `tests/test_ed.py` |
 | $N(D_N-M^\star)\to K$ | $486\sqrt3/(5\pi)-52=1.58917$ | Eq. (76) |
-| Onsager coefficient $\mathfrak L(0)$ | $(74\sqrt3-95\ln(2+\sqrt3))/(4\pi)=0.2435675$; $\mathfrak L(1)=0.090626$ | Eqs. (57), (76), `theory.onsager_ghd` |
+| Onsager coefficient $\mathfrak L(0)$ | $(74\sqrt3-95\ln(2+\sqrt3))/(4\pi)=0.2435675$ | Eqs. (57), (76), `theory.onsager_ghd(0)` |
+| $\mathfrak L(\beta>0)$ (model) | same integral with $\mathrm{sech}^2(\beta\varepsilon)$: 0.090626 at $\beta=1$; not derived in the note, the 2026-10 TN data lie ~4.5% above it | `theory.onsager_ghd` |
 | $\langle J,J\rangle_\beta/N$ | 20 ($\beta=0$), 4.290727 ($\beta=1$) | ED ring |
-| $\langle R,R\rangle_\beta/N$ | 2 ($\beta=0$), 2.607040 ($\beta=1$) | ED ring |
-| finite Mazur family | 18.18747 ($n=4$), 18.59992 ($n=8$) | Sec. 4.4, `theory.mazur_family` |
+| $\langle R,R\rangle_\beta/N$ | 2 ($\beta=0$), 2.60704 ($\beta=1$) | ED ring |
+| finite Mazur family | 18.18747 ($n=4$), 18.59992 (8), 18.6026931 (12), 18.602707768 (16), 18.6027078406 (24) | Sec. 4.4, `theory.mazur_family` (exact rational arithmetic) |
 | max velocity | 7.24 at $\theta\approx0.702$ | Eq. (43) |
 
 ## h-word basis

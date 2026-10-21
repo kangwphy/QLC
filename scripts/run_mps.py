@@ -24,7 +24,8 @@ from qlc.tn.purification import run_purification
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--route', default='split', choices=['direct', 'split'])
-    p.add_argument('--op', default=None, help='custom pattern name instead of the route operator')
+    p.add_argument('--op', default=None, choices=['J', 'R', 'Q1', 'J3', 'H'],
+                   help='custom pattern instead of the route operator')
     p.add_argument('--L', type=int, default=64)
     p.add_argument('--beta', type=float, default=1.0)
     p.add_argument('--chi', type=int, default=256)
@@ -42,7 +43,10 @@ def main():
     _setup.add_backend_args(p, 1)
     a = p.parse_args()
     be = _setup.make_backend(a)
-    out = a.out or os.path.join('results', 'mps', f'{a.route}_L{a.L}_b{a.beta:g}_chi{a.chi}_dt{a.dt:g}.json')
+    params = {k: v for k, v in vars(a).items() if k not in ('tmax', 'out', 'ckpt', 'ckpt_every', 'psi_file',
+                                                          'backend', 'device', 'threads')}
+    core = f'{a.route}_{a.op or "auto"}_L{a.L}_b{a.beta:g}_chi{a.chi}_dt{a.dt:g}'
+    out = a.out or os.path.join('results', 'mps', _setup.run_name(core, params) + '.json')
     ckpt = None if (a.ckpt or '').lower() == 'none' else (a.ckpt or out + '.ckpt.pkl')
     run_purification(route=a.route, L=a.L, beta=a.beta, chi=a.chi, chi_psi=a.chi_psi, tol=a.tol, tol_psi=a.tol_psi,
                      dt=a.dt, dtau=a.dtau, tmax=a.tmax, sym=not a.no_sym, op=a.op, psi_file=a.psi_file, out=out,

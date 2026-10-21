@@ -6,11 +6,13 @@ Two routes (note, App. E):
     split  : J = 3 Q1 + R with Q1 conserved; evolve  r_0 = i h_0 h_2 - i h_0 h_1         ->  C_R(t),
              C_J(t) = C_R(t) - C_R(0) + C_J(0)          (beta = 0: C_J(t) = 18 + C_R(t) exactly)
 
-The split route evolves only the part of J that is not carried by Q1 (norm 2 instead of 20), so a given
-truncation error is ~10x smaller relative to C_J - D.  C(t) = sum_x C_x(t) is summed over shifts |x| <= x0 + v t
-(light cone, v = 7.3 > max velocity 7.24) and C_{-x} = C_x by time reversal.  The Drude weight is the long-time
-value of C_J(t) (see qlc.analysis).  Open window of n spins; the infinite-chain value is obtained while the
-light cone stays inside the window (t < ~ n / (2 v) with folding).
+The split route evolves only the part of J that is not carried by Q1 (norm 2 instead of 20), so it tolerates
+truncation much better at long times.  C(t) = sum_x C_x(t) is summed over shifts |x| <= x0 + v t (light cone,
+v = 7.3 > max velocity 7.24) and C_{-x} = C_x by time reversal.  The Drude weight is the long-time value of C_J(t)
+(see qlc.analysis).  Open window of n spins (n - 2 words): with folding the operator spreads v t / 2 to each side,
+so the infinite-chain value is obtained for t <~ (n - 2 - span) / v (n = 64 for t <= 6).  At beta > 0 the window
+must also hold the thermal factor (n >= 32 at beta = 1).  Only K-odd operators (currents) are allowed at beta > 0:
+for K-even ones <o>_beta != 0 and the sum would contain the disconnected part.
 """
 import json
 import math
@@ -24,6 +26,7 @@ import numpy as np
 
 from ..model import pattern, STATIC_BETA0
 from . import hword
+from .mps import imaginary_steps
 from .wordmpo import WordMPO, folded_profile, pattern_words, k_parity
 
 
@@ -33,16 +36,20 @@ def rss_gib():
 
 
 def thermal_factor(n_words, beta, chi_rho, tau_im, tol, be):
-    """rho^{1/2} = e^{-beta H / 2} as a normalised WordMPO (None at beta = 0)"""
-    if beta == 0:
+    """rho^{1/2} = e^{-beta H / 2} as a normalised WordMPO (None at beta = 0).  The step is adjusted to
+    beta / (2 n_steps) <= tau_im so that beta is reached exactly; rho.init_loss is the discarded weight."""
+    nst, tau = imaginary_steps(beta, tau_im)
+    if nst == 0:
         return None
     rho = WordMPO.identity(n_words, be)
-    for _ in range(int(round(beta / 2 / tau_im))):
-        rho.sweep('imag', tau_im, chi_rho, tol)
+    loss = 0.0
+    for _ in range(nst):
+        loss += rho.sweep('imag', tau, chi_rho, tol) / rho.norm() ** 2
         rho.normalize()
     rho = rho.real_part()                       # Hermitian: real coefficients, continue in real arithmetic
-    rho.compress(chi_rho, tol)
+    loss += rho.compress(chi_rho, tol) / rho.norm() ** 2
     rho.normalize()
+    rho.init_loss, rho.n_steps, rho.tau = loss, nst, tau
     return rho
 
 
@@ -57,8 +64,11 @@ def operator_mpo(pat, n_words, rho, chi, tol, be):
 def static_correlation(op, n_words, rho, chi, tol, xmax, be):
     """C(0) = sum_x <o_x, o_0>_beta for a pattern (static, no time evolution)"""
     pat = pattern(op)
+    kappa = k_parity(pat)
+    if kappa == 1 and rho is not None:
+        raise ValueError('K-even operators at beta > 0 need the connected correlation; not supported')
     M = operator_mpo(pat, n_words, rho, chi, tol, be)
-    prof = folded_profile(M, M, rho, min(xmax, n_words - 1), k_parity(pat))
+    prof = folded_profile(M, M, rho, min(xmax, n_words - 1), kappa)
     return complex(prof[0] + 2 * sum(prof[1:]))
 
 
@@ -80,33 +90,52 @@ def run_hword(route='split', n=64, beta=0.0, chi=256, tol=1e-12, dt=0.05, tmax=6
     opname = op if op is not None else ('J' if route == 'direct' else 'R')
     pat = pattern(opname)
     kappa = k_parity(pat)
+    if kappa == 1 and beta > 0:
+        raise ValueError(f'op {opname!r} is K-even: at beta > 0 its correlation has a disconnected part '
+                         '<o>^2 per shift; only K-odd operators (currents J, R, Q1, J3) are supported')
+    if beta < 0:
+        raise ValueError('beta must be >= 0')
+    lo, hi = min(min(k) for k in pat), max(max(k) for k in pat)
     params = dict(method='h-word MPO, time folding', route=route, op=opname if isinstance(opname, str) else
-                  {str(k): [v.real, v.imag] for k, v in pat.items()}, n=n, beta=beta, chi=chi, tol=tol, dt=dt,
-                  chi_rho=chi_rho, tau_im=tau_im, x0=x0, vlc=vlc, sample_every=sample_every, backend=be.name)
+                  {','.join(map(str, k)): [complex(v).real, complex(v).imag] for k, v in sorted(pat.items())},
+                  n=n, beta=beta, chi=chi, tol=tol, dt=dt, chi_rho=chi_rho, tau_im=tau_im, x0=x0, vlc=vlc,
+                  sample_every=sample_every, cj0=cj0)
     steps = int(round(tmax / 2 / dt))
+    need = (hi - lo + 1) + vlc * tmax
+    if log and m < need:
+        log(f'WARNING: window of {m} words is smaller than span + v tmax = {need:.0f}: the light cone reaches the '
+            f'edges before tmax (see edge_weight / capped in the samples)')
+    if log and beta > 0 and n < 32:
+        log('WARNING: at beta ~ 1 the thermal factor needs n >= 32 (n = 24 is off by ~3% in static values)')
     t0 = time.time()
     loss = 0.0
     it0 = 0
     if ckpt and os.path.exists(ckpt):
         with open(ckpt, 'rb') as f:
             st = pickle.load(f)
-        bad = {k: (st['params'].get(k), v) for k, v in params.items() if k != 'backend' and st['params'].get(k) != v}
+        bad = {k: (st['params'].get(k), v) for k, v in params.items() if st['params'].get(k) != v}
         if bad:
             raise ValueError(f'checkpoint {ckpt} has different parameters: {bad}')
         M = WordMPO.from_numpy(st['M'], be)
         rho0 = None if st['rho0'] is None else WordMPO.from_numpy(st['rho0'], be)
         rho_t = None if st['rho_t'] is None else WordMPO.from_numpy(st['rho_t'], be)
         res, loss, it0 = st['res'], st['loss'], st['it'] + 1
+        loss_rho = st.get('loss_rho', 0.0)
         res.pop('status', None)
+        res.setdefault('backends', [res.get('backend')])
+        res['backends'].append(be.name)
+        res['backend'] = be.name
         if log:
             log(f'resumed from {ckpt} at t = {2 * st["it"] * dt:.4f}')
     else:
         rho0 = thermal_factor(m, beta, chi_rho, tau_im, tol, be)
         M = operator_mpo(pat, m, rho0, chi, tol, be)
         rho_t = None if rho0 is None else rho0.copy()
-        res = dict(params, samples=[])
+        loss_rho = 0.0
+        res = dict(params, backend=be.name, samples=[], discarded_init=float(getattr(M, 'init_loss', 0.0)))
         if rho0 is not None:
-            res['rho_bond'] = rho0.bond()
+            res.update(rho_bond=rho0.bond(), discarded_rho_init=rho0.init_loss, n_im_steps=rho0.n_steps,
+                       tau_im_eff=rho0.tau)
         if route == 'split' and op is None:
             if cj0 is not None:
                 res['C_J0'], res['C_J0_source'] = float(cj0), 'given'
@@ -121,19 +150,29 @@ def run_hword(route='split', n=64, beta=0.0, chi=256, tol=1e-12, dt=0.05, tmax=6
                 (f'; rho^1/2 bond {rho0.bond()}' if rho0 is not None else '') +
                 (f'; C_J(0) = {res["C_J0"]:.8f} ({res["C_J0_source"]})' if 'C_J0' in res else '') +
                 f'  [{time.time() - t0:.1f}s]')
+    warned_cap = False
     for it in range(it0, steps + 1):
         if it > 0:
             loss += M.sweep('rot', dt, chi, tol)
             if rho_t is not None:
-                rho_t.sweep('rot', dt, chi_rho, tol)
+                loss_rho += rho_t.sweep('rot', dt, chi_rho, tol)
         if it % sample_every == 0 or it == steps:
             tm = time.time()
             t = 2 * it * dt
-            xmax = min(m - 1, int(math.ceil(x0 + vlc * t)))
+            want = int(math.ceil(x0 + vlc * t))
+            xmax = min(m - 1, want)
             prof = folded_profile(M, M, rho_t, xmax, kappa)
             C = complex(prof[0] + 2 * sum(prof[1:]))
-            row = dict(t=t, C=[C.real, C.imag], xmax=xmax, edge=abs(prof[-1]), discarded=loss, bond=M.bond(),
-                       meas_s=time.time() - tm, elapsed_s=time.time() - t0, rss_gib=rss_gib())
+            row = dict(t=t, C=[C.real, C.imag], xmax=xmax, capped=want > m - 1, edge=abs(prof[-1]),
+                       discarded=loss, bond=M.bond(), meas_s=0.0, elapsed_s=0.0, rss_gib=rss_gib())
+            if rho_t is None:
+                row['edge_weight'] = M.edge_weight()
+            else:
+                row.update(rho_bond=rho_t.bond(), discarded_rho=loss_rho)
+            row['meas_s'], row['elapsed_s'] = time.time() - tm, time.time() - t0
+            if row['capped'] and log and not warned_cap:
+                warned_cap = True
+                log(f'WARNING: t = {t:g}: shift sum capped at the window size (x0 + v t > {m - 1})')
             if save_profile:
                 row['profile'] = [[v.real, v.imag] for v in prof]
             res['samples'].append(row)
@@ -146,10 +185,12 @@ def run_hword(route='split', n=64, beta=0.0, chi=256, tol=1e-12, dt=0.05, tmax=6
                 _write_json(out, res)
             if log:
                 log(json.dumps({k: (round(row[k], 10) if isinstance(row[k], float) else row[k])
-                                for k in ('t', 'C', 'C_J', 'bond', 'discarded', 'xmax', 'elapsed_s') if k in row}))
+                                for k in ('t', 'C', 'C_J', 'bond', 'discarded', 'edge_weight', 'xmax', 'elapsed_s')
+                                if k in row}))
             if ckpt and (len(res['samples']) % max(1, ckpt_every) == 0 or it == steps):
                 _save_ckpt(ckpt, dict(params=params, M=M.to_numpy(), rho0=None if rho0 is None else rho0.to_numpy(),
-                                      rho_t=None if rho_t is None else rho_t.to_numpy(), res=res, loss=loss, it=it))
+                                      rho_t=None if rho_t is None else rho_t.to_numpy(), res=res, loss=loss,
+                                      loss_rho=loss_rho, it=it))
             if max_rss_gib and row['rss_gib'] > max_rss_gib:
                 res['status'] = 'memory_stop'
                 if out:

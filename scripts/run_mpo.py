@@ -6,7 +6,8 @@
 beta = 0 is exact operator dynamics; beta > 0 uses the thermal factor rho^{1/2} as an h-word MPO.  The Drude
 weight is the long-time value of C_J(t): run scripts/drude.py on the output.  The run writes the JSON after every
 sample and a checkpoint (<out>.ckpt.pkl) every --ckpt-every samples; rerunning the same command resumes
-(tmax may be increased).
+(tmax may be increased).  The default output name contains a hash of all parameters except tmax, so job-array
+scans never collide.
 
 examples
   python scripts/run_mpo.py --route split  --n 64 --chi 256 --dt 0.05 --tmax 6
@@ -24,13 +25,17 @@ from qlc.tn.heisenberg import run_hword
 
 
 def default_out(a):
-    return os.path.join('results', 'mpo', f'{a.route}_{a.op or "auto"}_n{a.n}_b{a.beta:g}_chi{a.chi}_dt{a.dt:g}.json')
+    params = {k: v for k, v in vars(a).items() if k not in ('tmax', 'out', 'ckpt', 'ckpt_every', 'max_rss_gib',
+                                                          'backend', 'device', 'threads', 'profile')}
+    core = f'{a.route}_{a.op or "auto"}_n{a.n}_b{a.beta:g}_chi{a.chi}_dt{a.dt:g}'
+    return os.path.join('results', 'mpo', _setup.run_name(core, params) + '.json')
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--route', default='split', choices=['direct', 'split'])
-    p.add_argument('--op', default=None, help='custom pattern name instead of the route operator (J, R, Q1, J3, H)')
+    p.add_argument('--op', default=None, choices=['J', 'R', 'Q1', 'J3', 'H'],
+                   help='custom pattern instead of the route operator (K-even H only at beta = 0)')
     p.add_argument('--n', type=int, default=64, help='window size (spins); n - 2 words')
     p.add_argument('--beta', type=float, default=0.0)
     p.add_argument('--chi', type=int, default=256)
@@ -39,7 +44,7 @@ def main():
     p.add_argument('--dt', type=float, default=0.05, help='Trotter step of the folded evolution (t = 2 tau)')
     p.add_argument('--tau-im', type=float, default=0.0125, help='imaginary-time step for rho^{1/2}')
     p.add_argument('--tmax', type=float, default=6.0)
-    p.add_argument('--sample-every', type=int, default=1)
+    p.add_argument('--sample-every', type=_setup.positive_int, default=1)
     p.add_argument('--x0', type=float, default=12.0, help='shift sum |x| <= x0 + vlc t')
     p.add_argument('--vlc', type=float, default=7.3)
     p.add_argument('--cj0', type=float, default=None, help='C_J(0) for the split route at beta > 0 (default: computed)')

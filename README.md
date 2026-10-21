@@ -13,7 +13,7 @@ Three independent engines, all with NumPy (CPU) or PyTorch (CPU / GPU) back ends
 | engine | what | boundary / size |
 |---|---|---|
 | `qlc.ed` | exact diagonalisation in the reduced (irreducible-block) representation of the h-algebra: finite-size Drude weight $D_N(\beta)$ and $C_N(t)$ | ring (`pbc`, block $2^k$: $N=24\to1024$, $N=30\to8192$, $N=33\to32768$) and open chain (`obc`) |
-| `qlc.tn.heisenberg` | h-word MPO Heisenberg evolution with time folding, **direct route** (evolve $j$) and **split route** (evolve $R$, $J=3Q_1+R$), $\beta=0$ and $\beta>0$ | infinite chain from an open window of $n$ spins |
+| `qlc.tn.heisenberg` | h-word MPO Heisenberg evolution with time folding, **direct route** (evolve $j$) and **split route** (evolve $R$, $J=3Q_1+R$), $\beta=0$ and $\beta>0$ | infinite chain from an open window of $n$ spins ($n=64$ for $t\le6$; $n\ge32$ at $\beta\sim1$) |
 | `qlc.tn.purification` | spin-basis purification MPS + TEBD (independent check), same two routes | open chain of $L$ spins |
 
 The Drude weight is measured directly as the long-time value of $C_J(t)$ (`qlc.analysis`, `scripts/drude.py`) and compared with the closed forms in `qlc.theory` ($M^\star$, $D_{\rm GHD}(\beta)$, Mazur kernels, Onsager coefficient).
@@ -41,7 +41,7 @@ docs/               physics.md  methods.md  cluster_gpu.md  README_zh.md (中文
 ```bash
 git clone git@github.com:kangwphy/QLC.git && cd QLC
 pip install -e .            # numpy, scipy
-pip install -e .[test]      # + pytest
+pip install -e '.[test]'    # + pytest
 pip install torch           # optional: GPU back end (CUDA, or the ROCm / DTK build on AMD / Hygon DCU)
 ```
 The scripts also run without installation (they add `src/` to the path).
@@ -65,12 +65,14 @@ python scripts/run_mps.py --route split --L 64 --beta 1 --chi 256 --chi-psi 192 
     --psi-file results/mps/psi_b1_L64.pkl
 
 # Drude weight from the outputs (+ Richardson extrapolation of two dt)
-python scripts/drude.py results/mpo/*.json results/ed/pbc_L*_J_total.json
+python scripts/drude.py results/mpo/*.json results/ed/pbc_L*_J_total_*.json
 python scripts/drude.py --richardson results/mpo/run_dt0.05.json results/mpo/run_dt0.025.json
 ```
 
-All runs write JSON after every sample; TN runs checkpoint and resume (`<out>.ckpt.pkl`), ED caches every
-sector (`<out>/<name>_sectors/`).  Library use:
+All runs write JSON after every sample.  Default output names contain the key parameters plus a short hash of
+all of them except `tmax`, so job-array scans never collide and resubmitting the same command (also with a larger
+`--tmax`) resumes from the checkpoint (`<out>.ckpt.pkl`).  ED caches every sector, independent of $\beta$
+(`results/ed/sectors/`), so further temperatures reuse the diagonalisations.  Library use:
 
 ```python
 from qlc.ed import run_ed
@@ -89,9 +91,10 @@ $r_0=i(h_0h_2-h_0h_1)$ (norm 2 instead of 20) and reconstructs
 
 $$C_J(t)=C_R(t)-C_R(0)+C_J(0)\qquad(\beta=0:\ C_J=18+C_R).$$
 
-At the same bond dimension the split route was an order of magnitude more accurate in our tests ($\chi=64$,
-$t\approx1$: error $1\times10^{-4}$ against $1\times10^{-3}$), and on an open
-chain (purification, OBC ED) it is insensitive to the boundary-induced decay of the $Q_1$ part.  The two routes
+At the same bond dimension the split route stays accurate much longer: $n=40$, $\chi=64$, $dt=0.05$, $\beta=0$
+gives $2\times10^{-4}$ (split) against $1\times10^{-2}$ (direct) from the $\chi=512$ reference at $t=3$, while for
+$t\lesssim2$ both are limited by the same Trotter error.  On an open chain (purification, OBC ED) the split route is
+also insensitive to the boundary-induced decay of the $Q_1$ part.  The two routes
 differ by an $O(dt^2)$ Trotter term (the circuit conserves $Q_1$ only approximately).
 
 ## Tests
@@ -104,9 +107,11 @@ pytest -m slow           # bulk reference data at beta = 0 and beta = 1 (a few m
 ## Compute nodes and GPU
 
 See [docs/cluster_gpu.md](docs/cluster_gpu.md).  In short: TN runs are fastest with **one BLAS thread per
-process** (the scripts default to `--threads 1`; ten threads were 5–10x *slower* in tests) and are best run
-as SLURM job arrays (`scripts/make_jobs.py` + `slurm/array_cpu.sbatch`); ED of large rings and TN runs with
-$\chi\gtrsim 512$ can use the GPU (`--backend gpu`, `slurm/gpu.sbatch`).
+process** (the scripts default to `--threads 1`; ten OpenBLAS threads were 9x *slower* in a test) and are best
+run as SLURM job arrays (`mkdir -p jobs logs results`, `scripts/make_jobs.py`, `slurm/array_cpu.sbatch`); ED of
+large rings and TN runs with $\chi\gtrsim 512$ can use the GPU (`--backend gpu`, `slurm/gpu.sbatch`).  ED needs
+about $4D^2\times16$ bytes per block ($D=2^k$: 4 GiB at $N=30$, 64 GiB at $N=31$–33).  GPU runs are validated in
+double precision on the CPU code path only; GPU timings have not been measured.
 
 ## Provenance
 

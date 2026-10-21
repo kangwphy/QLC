@@ -195,3 +195,58 @@ def test_bulk_reference_beta1():
         r = run_hword(route=route, n=40, beta=1.0, chi=128, chi_rho=64, dt=0.05, tmax=0.3, log=None)
         for i, s in enumerate(r['samples']):
             assert abs(s['t'] - ref['t'][i]) < 1e-9 and abs(s['C_J'] - ref['C'][i]) < 3e-5
+
+
+def test_k_even_ops_and_beta_steps():
+    r = run_hword(op='H', n=14, chi=32, dt=0.05, tmax=0.2, log=None)            # beta = 0: conserved, C = 1
+    assert all(abs(x['C'][0] - 1) < 1e-4 for x in r['samples'])            # Trotter: O(dt^2)
+    with pytest.raises(ValueError):
+        run_hword(op='H', n=14, beta=0.5, chi=32, tmax=0.1, log=None)
+    with pytest.raises(ValueError):
+        run_hword(n=14, beta=-1.0, tmax=0.1, log=None)
+    rho = thermal_factor(8, 0.45, 64, 0.05, 1e-14, BE)
+    assert rho.n_steps == 5 and abs(rho.tau - 0.045) < 1e-15                     # beta reached exactly
+    ref = W.coeffs(np.linalg.matrix_power(W.imag_sweep(0.045), 5))
+    rho7 = thermal_factor(W.m, 0.45, 10 ** 6, 0.05, 1e-15, BE)
+    v = rho7.coefficients()
+    assert np.allclose(v / np.linalg.norm(v), ref / np.linalg.norm(ref), atol=1e-12)
+
+
+def test_place_negative_offsets():
+    pat = {(-3, 0): 1.0}
+    k0 = hword.place(pat, 6)
+    assert k0 - 3 >= 0 and k0 <= 5
+    with pytest.raises(ValueError):
+        hword.place(pat, 3)
+
+
+def test_resume_checks_cj0(tmp_path):
+    ck = str(tmp_path / 'c.pkl')
+    kw = dict(route='split', n=14, beta=0.5, chi=16, chi_rho=16, dt=0.05, tau_im=0.05, log=None, ckpt=ck,
+              ckpt_every=1)
+    run_hword(tmax=0.1, cj0=5.0, **kw)
+    with pytest.raises(ValueError):
+        run_hword(tmax=0.2, cj0=4.0, **kw)
+
+
+def test_torch_svd_fallback(monkeypatch):
+    """a wrong (or failing) torch SVD is detected and replaced, keeping the dtype"""
+    torch = pytest.importorskip('torch')
+    be = get_backend('torch', 'cpu')
+    real_svd = torch.linalg.svd
+    calls = {'n': 0}
+
+    def bad_svd(m, full_matrices=False, **kw):
+        calls['n'] += 1
+        u, s, v = real_svd(m, full_matrices=full_matrices, **kw)
+        if calls['n'] % 7 == 3:
+            return u * 0.5, s, v                              # silently wrong factors
+        if calls['n'] % 7 == 5:
+            raise RuntimeError('no convergence')
+        return u, s, v
+    ref = run_hword(route='split', n=14, chi=32, dt=0.05, tmax=0.4, log=None)
+    monkeypatch.setattr(torch.linalg, 'svd', bad_svd)
+    r = run_hword(route='split', n=14, chi=32, dt=0.05, tmax=0.4, log=None, be=be)
+    assert be.svd_fallbacks > 0
+    for s1, s2 in zip(ref['samples'], r['samples']):
+        assert abs(s1['C_J'] - s2['C_J']) < 1e-10

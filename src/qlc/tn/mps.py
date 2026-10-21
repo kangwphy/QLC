@@ -15,6 +15,23 @@ def keep_rank(s, chi, tol):
     return max(1, min(int(chi), int((s > tol * s0).sum())))
 
 
+def imaginary_steps(beta, dtau):
+    """(number of steps, step) reaching beta / 2 exactly with steps <= dtau"""
+    if beta < 0:
+        raise ValueError('beta must be >= 0')
+    if beta == 0:
+        return 0, 0.0
+    n = max(1, int(math.ceil(beta / (2 * dtau) - 1e-9)))
+    return n, beta / (2 * n)
+
+
+def truncation(be, s, chi, tol):
+    """(kept rank, discarded weight sum of s^2) from one host copy of the singular values"""
+    s_h = be.to_numpy(s)
+    rk = keep_rank(s_h, chi, tol)
+    return rk, float((s_h[rk:] ** 2).sum())
+
+
 class MPS:
     def __init__(self, tensors, be, center=0):
         self.A = list(tensors)
@@ -105,8 +122,8 @@ class MPS:
             left, tail = l, th
             for q in range(k - 1):
                 u, s, v = be.svd(tail.reshape(left * d, -1))
-                rk = keep_rank(s, chi, tol)
-                loss += float((s[rk:] ** 2).sum())
+                rk, w = truncation(be, s, chi, tol)
+                loss += w
                 self.A[i + q] = u[:, :rk].reshape(left, d, rk)
                 tail = s[:rk, None] * v[:rk]
                 left = rk
@@ -116,8 +133,8 @@ class MPS:
             right, tail = r, th
             for q in range(k - 1, 0, -1):
                 u, s, v = be.svd(tail.reshape(-1, d * right))
-                rk = keep_rank(s, chi, tol)
-                loss += float((s[rk:] ** 2).sum())
+                rk, w = truncation(be, s, chi, tol)
+                loss += w
                 self.A[i + q] = v[:rk].reshape(rk, d, right)
                 tail = u[:, :rk] * s[:rk]
                 right = rk
@@ -133,8 +150,8 @@ class MPS:
         for k in range(len(self.A) - 1, 0, -1):
             l, d, r = self.A[k].shape
             u, s, v = be.svd(self.A[k].reshape(l, d * r))
-            rk = keep_rank(s, chi, tol)
-            loss += float((s[rk:] ** 2).sum())
+            rk, w = truncation(be, s, chi, tol)
+            loss += w
             self.A[k] = v[:rk].reshape(rk, d, r)
             self.A[k - 1] = be.tensordot(self.A[k - 1], u[:, :rk] * s[:rk], (2, 0))
         self.center = 0

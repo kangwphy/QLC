@@ -47,3 +47,20 @@ def make_backend(a):
 
 def log(msg):
     print(msg, flush=True)
+
+
+def positive_int(x):
+    v = int(x)
+    if v < 1:
+        import argparse
+        raise argparse.ArgumentTypeError('must be a positive integer')
+    return v
+
+
+def run_name(core, params):
+    """readable core name + short hash of every result-defining parameter (tmax excluded, so a longer run with the
+    same parameters resumes the same files)"""
+    import hashlib
+    import json
+    h = hashlib.sha1(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()[:8]
+    return f'{core}_{h}'

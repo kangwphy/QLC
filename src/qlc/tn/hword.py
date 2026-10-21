@@ -66,9 +66,10 @@ def a_count(S):
 
 
 def place(pat, n_words):
-    """first word of a pattern placed in the middle of a window of n_words words"""
-    span = max(max(k) for k in pat)
-    k0 = (n_words - 1 - span) // 2
-    if k0 < 0:
-        raise ValueError('window too small for the operator')
+    """base word k0 such that the density sum_P c_P h_{k0+P...} sits in the middle of a window of n_words words"""
+    lo = min(min(k) for k in pat)
+    hi = max(max(k) for k in pat)
+    k0 = (n_words - 1 - (hi - lo)) // 2 - lo
+    if k0 + lo < 0 or k0 + hi > n_words - 1:
+        raise ValueError(f'window of {n_words} words too small for an operator spanning {hi - lo + 1} words')
     return k0

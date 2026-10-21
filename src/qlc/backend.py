@@ -51,18 +51,23 @@ class NumpyBackend:
 
     # ------------------------------------------------------------------ linear algebra
     def svd(self, m):
-        """thin SVD m = U diag(s) Vh; falls back to LAPACK gesvd if gesdd does not converge"""
+        """thin SVD m = U diag(s) Vh, validated (see svd_ok); falls back to LAPACK gesvd"""
         try:
-            return np.linalg.svd(m, full_matrices=False)
+            u, s, v = np.linalg.svd(m, full_matrices=False)
+            if svd_ok(self, m, u, s, v):
+                return u, s, v
         except np.linalg.LinAlgError:
-            from scipy.linalg import svd
-            return svd(m, full_matrices=False, lapack_driver='gesvd')
+            pass
+        from scipy.linalg import svd
+        return svd(m, full_matrices=False, lapack_driver='gesvd')
 
     def qr(self, m):
         return np.linalg.qr(m)
 
     def eigh(self, h):
-        return np.linalg.eigh(h)
+        """eigh of a matrix that may be overwritten (lower peak memory)"""
+        from scipy.linalg import eigh
+        return eigh(h, overwrite_a=True, check_finite=False, driver='evd')
 
     def norm(self, a):
         return float(np.linalg.norm(a))
@@ -105,6 +110,7 @@ class TorchBackend(NumpyBackend):
         self.device = torch.device(device)
         if self.device.type == 'mps':
             raise ValueError("Apple 'mps' has no complex128; use device='cpu' or a CUDA/ROCm GPU")
+        self.svd_fallbacks = 0
         self._dtypes = {complex: torch.complex128, float: torch.float64, int: torch.int64, bool: torch.bool,
                         np.complex128: torch.complex128, np.float64: torch.float64, np.int64: torch.int64}
 
@@ -149,23 +155,38 @@ class TorchBackend(NumpyBackend):
         return self.torch.einsum(spec, *ops)
 
     def svd(self, m):
+        """torch SVD, validated: some builds (e.g. torch on macOS / Accelerate) return wrong factors for
+        rank-deficient matrices without raising.  Fallbacks: driver 'gesvd' (CUDA), then SciPy on the CPU;
+        the dtype of the input is kept."""
         t = self.torch
         try:
-            return t.linalg.svd(m, full_matrices=False)
-        except Exception:                      # rare non-convergence: retry with the robust driver, then on the CPU
-            if m.is_cuda:
-                try:
-                    return t.linalg.svd(m, full_matrices=False, driver='gesvd')
-                except Exception:
-                    pass
-            u, s, v = NumpyBackend.svd(self, self.to_numpy(m))
-            return self.asarray(u), self.asarray(s, float), self.asarray(v)
+            u, s, v = t.linalg.svd(m, full_matrices=False)
+            if svd_ok(self, m, u, s, v):
+                return u, s, v
+        except Exception:
+            pass
+        self.svd_fallbacks += 1
+        if m.is_cuda:
+            try:
+                u, s, v = t.linalg.svd(m, full_matrices=False, driver='gesvd')
+                if svd_ok(self, m, u, s, v):
+                    return u, s, v
+            except Exception:
+                pass
+        u, s, v = _NP.svd(self.to_numpy(m))
+        dt = complex if np.iscomplexobj(u) else float
+        return self.asarray(u, dt), self.asarray(s, float), self.asarray(v, dt)
 
     def qr(self, m):
         return self.torch.linalg.qr(m, mode='reduced')
 
     def eigh(self, h):
-        return self.torch.linalg.eigh(h)
+        w, v = self.torch.linalg.eigh(h)
+        if not eigh_ok(self, h, w, v):
+            self.svd_fallbacks += 1
+            w, v = _NP.eigh(self.to_numpy(h).copy())
+            w, v = self.asarray(w, float), self.asarray(v, complex if np.iscomplexobj(v) else float)
+        return w, v
 
     def norm(self, a):
         return float(self.torch.linalg.norm(a))
@@ -194,6 +215,56 @@ class TorchBackend(NumpyBackend):
     def sync(self):
         if self.device.type == 'cuda':
             self.torch.cuda.synchronize()
+
+
+_NP = NumpyBackend()
+_PROBES = {}
+
+
+def _probe(be, n, like, key):
+    """fixed pseudo-random probe vector of length n with the dtype/device of `like`"""
+    k = (be.name, str(be.device), n, be.is_complex(like), key)
+    if k not in _PROBES:
+        rng = np.random.default_rng(12345 + n + 7 * key)
+        x = rng.normal(size=n) + (1j * rng.normal(size=n) if be.is_complex(like) else 0)
+        _PROBES[k] = be.asarray(x, complex if be.is_complex(like) else float)
+    return _PROBES[k]
+
+
+def svd_ok(be, m, u, s, v, rtol=1e-9):
+    """cheap O(mn) checks of a thin SVD: finite, sum s^2 = |m|_F^2, m x = U s Vh x and U, Vh orthonormal
+    on probe vectors"""
+    s_h = np.asarray(be.to_numpy(s), dtype=float)
+    if not np.all(np.isfinite(s_h)):
+        return False
+    fro2 = float(be.to_numpy(be.abs2(m).sum()))
+    if fro2 == 0:
+        return True
+    if abs(float((s_h ** 2).sum()) - fro2) > rtol * fro2:
+        return False
+    tol = 1e-8
+    x = _probe(be, m.shape[1], m, 0)
+    r = m @ x - u @ (s * (v @ x))
+    if be.norm(r) > tol * np.sqrt(fro2) * be.norm(x):
+        return False
+    y = _probe(be, u.shape[1], u, 1)
+    if be.norm(u.conj().T @ (u @ y) - y) > tol * be.norm(y):
+        return False
+    if be.norm(v @ (v.conj().T @ y) - y) > tol * be.norm(y):
+        return False
+    return True
+
+
+def eigh_ok(be, h, w, v):
+    """H V x = V (w x) and V orthonormal on a probe vector"""
+    w_h = np.asarray(be.to_numpy(w), dtype=float)
+    if not np.all(np.isfinite(w_h)):
+        return False
+    x = _probe(be, h.shape[0], v, 2)
+    nh = be.norm(h)
+    if be.norm(h @ (v @ x) - v @ (w * x)) > 1e-9 * max(nh, 1e-300) * be.norm(x):
+        return False
+    return be.norm(v.conj().T @ (v @ x) - x) <= 1e-9 * be.norm(x)
 
 
 def get_backend(name='numpy', device=None):

@@ -86,7 +86,7 @@ class WordMPO(MPS):
             ts[0] = ts[0] * (complex(c).real if real else complex(c))
             m = cls(ts, be, 0)
             total = m if total is None else total.add(m)
-        total.compress(chi, tol)
+        total.init_loss = total.compress(chi, tol)
         return total
 
     @property
@@ -113,15 +113,28 @@ class WordMPO(MPS):
 
     def times_pattern(self, pat, k0, chi, tol=1e-13):
         """sum_P c_P (h_{k0+P_1} h_{k0+P_2} ...) X  as a new compressed WordMPO"""
-        total = None
+        total, loss = None, 0.0
         for offs, c in pat.items():
             m = self.copy()
             for o in reversed(offs):
                 m.left_mult(k0 + o)
             m.scale(complex(c))
             total = m if total is None else total.add(m)
-            total.compress(chi, tol)
+            loss += total.compress(chi, tol)
+        total.init_loss = loss
         return total
+
+    def edge_weight(self):
+        """occupation weight of the outermost words, max(left, right), relative to the squared norm.
+        At beta = 0 this measures how much of the evolved operator has reached the window boundary."""
+        be = self.be
+        out = []
+        for site in (self.PAD, self.PAD + self.n_words - 1):
+            self.move_center(site)
+            A = self.A[site]
+            n2 = be.norm(A) ** 2
+            out.append(be.norm(A[:, 1, :]) ** 2 / n2 if n2 > 0 else 0.0)
+        return max(out)
 
     def sweep(self, kind, step, chi, tol):
         """palindromic second-order product of the 5-site maps of all words; kind 'rot' (Heisenberg e^{iH step})

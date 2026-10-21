@@ -30,10 +30,14 @@ def test_onsager_table(beta, L):
     assert abs(theory.onsager_ghd(beta) / L - 1) < 2e-3
 
 
-@pytest.mark.parametrize('n,M', [(4, 18.18747), (8, 18.59992)])
-def test_mazur_family(n, M):
-    """note, Sec. 4.4"""
-    assert abs(theory.mazur_family(n) - M) < 1e-5
+@pytest.mark.parametrize('n,M,tol', [(4, 18.18747, 1e-5), (8, 18.59992, 1e-5), (12, 18.6026931, 1e-7),
+                                     (16, 18.602707768, 1e-9), (24, 18.6027078406, 1e-10)])
+def test_mazur_family(n, M, tol):
+    """note, Sec. 4.4 (exact arithmetic: the kernel is too ill-conditioned for float64 beyond ~20 charges)"""
+    v = theory.mazur_family(n)
+    assert abs(v - M) < tol and v < theory.M_STAR
+    with pytest.raises(ValueError):
+        theory.mazur_kernel(0.5, -0.3)
 
 
 def test_mazur_kernel_mode_representation():
@@ -51,6 +55,7 @@ def test_estimators_synthetic():
     C = D + A * np.cos(theory.OMEGA_TAIL * t + 0.3) / np.maximum(t, 0.5) ** 3
     e = analysis.drude_estimates(t, C, t_min=2.0, reference=D)
     assert abs(e['tail_fit']['D'] - D) < 1e-10
+    assert np.isfinite(analysis.tail_fit(t, C, t_min=0.0)['D'])       # t = 0 is excluded
     assert abs(e['plateau']['D'] - D) < 2e-3
     assert e['plateau']['periods'] >= 4
 

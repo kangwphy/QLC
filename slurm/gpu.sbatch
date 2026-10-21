@@ -1,5 +1,6 @@
 #!/bin/bash
 # Single GPU job (torch backend, double precision).  Run from the repository root, e.g.
+#   mkdir -p logs results
 #   sbatch slurm/gpu.sbatch python3 scripts/run_ed.py --L 30 --beta 0 0.5 1 2 --backend gpu
 #   sbatch slurm/gpu.sbatch python3 scripts/run_mpo.py --route split --n 96 --chi 512 --tmax 6 --backend gpu
 # Or a jobs file, one task per GPU:  sbatch --array=1-N slurm/gpu.sbatch --jobs jobs/gpu.txt

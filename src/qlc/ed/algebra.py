@@ -90,11 +90,17 @@ class Representation:
 
 
 def apply_terms(app, V, be):
-    out = None
+    """O V for an applier (list of (source rows, signs)); an empty operator gives zeros"""
+    out = be.zeros(tuple(V.shape))
     for src, sgn in app:
-        t = sgn * be.take_rows(V, src)
-        out = t if out is None else out + t
+        out = out + sgn * be.take_rows(V, src)
     return out
+
+
+def is_hermitian(terms):
+    """terms (a, b, phase) of sum phase X^a Z^b: Hermitian iff phase = conj(phase) (-1)^{|a & b|} for every term"""
+    from ..model import _pc
+    return all(abs(p - np.conj(p) * (-1) ** _pc(a & b)) <= 1e-12 * max(1.0, abs(p)) for a, b, p in terms)
 
 
 # ---------------------------------------------------------------------- full representation

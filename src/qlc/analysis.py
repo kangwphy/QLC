@@ -50,7 +50,7 @@ def plateau(t, C, t_min=1.5, t_max=None, period=T_TAIL):
 def tail_fit(t, C, t_min=1.5, omega=OMEGA_TAIL, power=3.0, extra=()):
     """least squares C = D + (a cos wt + b sin wt) / t^power + sum_k c_k t^-k (k in extra) on t >= t_min"""
     t, C = np.asarray(t, float), np.asarray(C, float)
-    m = t >= t_min
+    m = (t >= t_min) & (t > 0)
     tt, y = t[m], C[m]
     cols = [np.ones_like(tt), np.cos(omega * tt) / tt ** power, np.sin(omega * tt) / tt ** power]
     cols += [tt ** (-k) for k in extra]

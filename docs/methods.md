@@ -24,8 +24,13 @@ column chunks: $A V_{:,c}$ is applied as a sum of gathered rows (no dense $J$), 
 $W_{mn}=A_{mn}B_{nm}$ give the degenerate-block sums (Drude weight), the diagonal (static value) and
 $\sum_n W_{mn}e^{-iE_nt}$ (correlation).  Memory: one $D\times D$ matrix plus $O(D\times\text{chunk})$ and
 $O(D\times n_t)$.  Degenerate blocks: eigenvalue gaps below `tol` $\cdot\max(1,\max|E|)$ (default $10^{-9}$).
-Every sector is saved as an `.npz` (restart).  Thermal weights use a per-sector reference energy (no overflow
-at large $\beta$).
+Every sector is saved as an `.npz` whose content does not depend on $\beta$ (energies, block sums, diagonal and,
+for $C(t)$, $X_m(t)=e^{iE_mt}\sum_nW_{mn}e^{-iE_nt}$, a $D\times n_t$ array); any $\beta$ is evaluated afterwards,
+so further temperatures reuse the diagonalisations.  Thermal weights use a common reference energy (no overflow
+at large $\beta$).  **Memory** per block: about $4D^2\times16$ bytes on the CPU (dense $H$, eigenvectors, LAPACK
+workspace; NumPy overwrites $H$ in place), i.e. 1 GiB at $D=4096$, 4 GiB at 8192, 16 GiB at 16384, 64 GiB at
+32768; on a GPU at least $H$, $V$ and the cuSOLVER workspace (an 80 GB card for $D=32768$).  The operator must be
+Hermitian (checked).  A local probe on an open chain is centred and must fit completely (checked).
 
 ## 2. h-word MPO Heisenberg evolution (`qlc.tn.heisenberg`)
 
@@ -36,17 +41,21 @@ rotation maps of all words (second order), applied with an explicit orthogonalit
 MPO; the sum runs over $|x|\le x_0+v t$ ($v=7.3$).
 
 * $\beta=0$: $M=o_0$; real arithmetic (Hermitian operator, real gates), $Z_x=1$.
-* $\beta>0$: $\rho^{1/2}=e^{-\beta H/2}$ from imaginary-time sweeps (step `tau_im`, bond `chi_rho`), converted to
-  real form; $M=o_0\rho^{1/2}$ (complex).  $\rho^{1/2}$ is evolved with the same gates and $Z_x$ divides out the
+* $\beta>0$: $\rho^{1/2}=e^{-\beta H/2}$ from imaginary-time sweeps (bond `chi_rho`; the step is adjusted to
+  $\beta/(2n)\le$ `tau_im` so that $\beta$ is reached exactly), converted to real form; $M=o_0\rho^{1/2}$ (complex).
+  Only $K$-odd operators (currents) are accepted, since a $K$-even one has $\langle o\rangle_\beta\ne0$.  $\rho^{1/2}$ is evolved with the same gates and $Z_x$ divides out the
   window-edge mismatch of the shifted thermal factor.  **Window size**: at $\beta=1$ the static values need
   $n\ge32$ ($n=24$ is off by 3%, $n=32$ by $<10^{-4}$).
 * Routes: `direct` ($o=j$) and `split` ($o=r$; $C_J=C_R-C_R(0)+C_J(0)$, $C_J(0)$ exact at $\beta=0$ and from the
   same thermal factor at $\beta>0$, or given with `--cj0`).
 
 **Validity**: the folded operator spreads by $v\,t/2$ to each side; keep the light cone inside the window,
-$n\gtrsim v\,t_{\max}+$ operator span $+$ margin ($n=64$ for $t\le6$ as in the note).  Errors to control:
-truncation (`chi`, see `discarded`), Trotter ($O(dt^2)$, Richardson with `scripts/drude.py --richardson`),
-window (`edge` = last profile entry), and at $\beta>0$ `tau_im`, `chi_rho`.
+$n-2\gtrsim v\,t_{\max}+$ operator span ($n=64$ for $t\le6$ as in the note; a warning is printed otherwise).
+Diagnostics per sample: `discarded` (truncation of the evolved operator; `discarded_init` for its construction),
+`discarded_rho` / `discarded_rho_init` (thermal factor), `edge_weight` ($\beta=0$: occupation weight of the outermost
+words, i.e. how much of the operator reached the window boundary), `capped` (shift sum limited by the window).
+Errors to control: truncation (`chi`, `chi_rho`), Trotter ($O(dt^2)$, Richardson with
+`scripts/drude.py --richardson`), window ($n$), and at $\beta>0$ `tau_im`.
 
 **Checks** (`tests/test_hword.py`): every local map and overlap against dense matrices; the full run
 (both routes, $\beta=0$ and $0.6$) against a dense emulation of the same Trotter circuit to $10^{-10}$; bulk

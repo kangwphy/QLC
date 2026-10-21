@@ -119,10 +119,22 @@ class Chain:
             out.append((c, idx))
         return out
 
-    def centre_terms(self, sym=True):
-        """term index (indices) of a local probe in the middle of the chain, c = L//2 - 2; sym: c, c+1, c+2"""
-        c = max(0, self.L // 2 - 2)
-        return [c, c + 1, c + 2] if sym else [c]
+    def centre_terms(self, sym=True, pat='J'):
+        """base term(s) of a local probe density in the middle of the chain; sym: three neighbouring sublattices
+        c, c+1, c+2 (averaged).  On the open chain the densities are centred and must fit completely."""
+        pat = pattern(pat)
+        lo, hi = min(min(k) for k in pat), max(max(k) for k in pat)
+        k = 3 if sym else 1
+        if self.bc == 'pbc':
+            c = self.L // 2 - 2
+        else:
+            c = (self.n_terms - k - (hi - lo)) // 2 - lo
+        cs = list(range(c, c + k))
+        for j in cs:
+            if len(self.local_placements(pat, j)) < len(pat):
+                raise ValueError(f'{self}: the local probe density does not fit (needs at least '
+                                 f'{hi - lo + k + 2} spins)')
+        return cs
 
     def word_pauli(self, idx):
         """ordered product of h_j, j in idx, as a Pauli string (x, z, p)"""

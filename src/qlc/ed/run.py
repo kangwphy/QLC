@@ -10,7 +10,8 @@
   C(t) = <J(t) j_c>_beta with j_c the current density in the middle (sym: average over three neighbouring
   sublattices), the quantity the MPO / MPS codes compute on open windows.
 
-Each sector is written to its own .npz file, so an interrupted run restarts where it stopped.
+Each sector is written to its own .npz file (beta-independent), so an interrupted run restarts where it stopped
+and further temperatures reuse the diagonalisations.
 """
 import hashlib
 import json
@@ -20,17 +21,27 @@ import time
 import numpy as np
 
 from ..model import Chain, pattern
-from .algebra import representations, ReducedStructure
+from .algebra import representations, ReducedStructure, full_representation, is_hermitian
 from .spectrum import sector_data, combine
+
+CACHE_VERSION = 2
 
 
 def _params_key(p):
     return hashlib.sha1(json.dumps(p, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
+def pattern_json(op):
+    """JSON-safe form of a pattern: {'0,1': [re, im], ...}"""
+    return {','.join(map(str, k)): [complex(c).real, complex(c).imag] for k, c in sorted(pattern(op).items())}
+
+
 def run_ed(L, bc='pbc', op='J', probe='total', betas=(0.0,), ts=None, method='reduced', tol=1e-9,
            sym=True, outdir=None, be=None, chunk=1024, log=print):
-    """returns a dict with D(beta), C0(beta) and (if ts is given) C(t); see the module docstring"""
+    """returns a dict with D(beta), C0(beta) and (if ts is given) C(t); see the module docstring.
+
+    op: pattern name (qlc.model.PATTERNS) or dict {offsets: coefficient}; it must be Hermitian.
+    outdir: sector cache.  The cached data do not depend on beta, so further betas reuse every block."""
     from ..backend import get_backend
     be = be or get_backend()
     chain = Chain(L, bc)
@@ -38,41 +49,48 @@ def run_ed(L, bc='pbc', op='J', probe='total', betas=(0.0,), ts=None, method='re
     ts = None if ts is None else np.asarray(ts, dtype=float)
     if probe not in ('total', 'local'):
         raise ValueError("probe must be 'total' or 'local'")
-    centres = chain.centre_terms(sym) if probe == 'local' else None
+    if int(chunk) < 1:
+        raise ValueError('chunk must be a positive integer')
+    if not is_hermitian(full_representation(chain).op_terms(op)):
+        raise ValueError('the operator pattern is not Hermitian')
+    centres = chain.centre_terms(sym, op) if probe == 'local' else None
     norm = float(L) if probe == 'total' else 1.0
     t0 = time.time()
     reps = representations(chain, method, use_orbits=(probe == 'total'))
-    info = dict(L=L, bc=bc, op=op if isinstance(op, str) else pattern(op), probe=probe, method=method,
-                n_blocks=len(reps), block_dim=reps[0].dim, centres=centres, norm=norm)
+    info = dict(L=L, bc=bc, op=op if isinstance(op, str) else 'custom', op_pattern=pattern_json(op), probe=probe,
+                method=method, n_blocks=len(reps), block_dim=reps[0].dim, centres=centres, norm=norm)
     if method == 'reduced':
         rs = ReducedStructure(chain)
         info.update(k=rs.k, c=rs.c)
     if log:
-        log(f'ED {chain}: {len(reps)} block(s) of dimension {reps[0].dim}, op={op}, probe={probe}, backend={be.name}')
-    key = _params_key(dict(info, betas=betas, ts=None if ts is None else ts.tolist(), tol=tol, sym=sym))
+        log(f'ED {chain}: {len(reps)} block(s) of dimension {reps[0].dim}, op={info["op"]}, probe={probe}, '
+            f'backend={be.name}')
+    key = _params_key(dict(version=CACHE_VERSION, L=L, bc=bc, op=info['op_pattern'], probe=probe, centres=centres,
+                           method=method, tol=tol, ts=None if ts is None else ts.tolist()))
     datas = []
     for rep in reps:
-        f = os.path.join(outdir, f'{rep.label}.npz') if outdir else None
+        f = os.path.join(outdir, f'{rep.label}_{key}.npz') if outdir else None
         if f and os.path.exists(f):
             z = np.load(f, allow_pickle=False)
-            if str(z['key']) == key:
-                datas.append({k: z[k] for k in z.files})
-                for k in ('E0', 'weight', 'dim'):
-                    datas[-1][k] = datas[-1][k].item()
-                if log:
-                    log(f'  {rep.label}: loaded from {f}')
-                continue
+            d = {k: z[k] for k in z.files}
+            for k in ('E0', 'weight', 'dim'):
+                d[k] = d[k].item()
+            d['weight'] = rep.weight
+            datas.append(d)
+            if log:
+                log(f'  {rep.label}: loaded from {f}')
+            continue
         A = rep.op_terms(op)
         B = None if probe == 'total' else rep.local_terms(op, centres)
-        d = sector_data(rep, A, B, ts=ts, betas=betas, be=be, tol=tol, chunk=chunk, log=log)
-        d.pop('betas', None)
+        d = sector_data(rep, A, B, ts=ts, be=be, tol=tol, chunk=chunk, log=log)
         if f:
             os.makedirs(outdir, exist_ok=True)
-            np.savez(f + '.tmp.npz', key=key, **d)
-            os.replace(f + '.tmp.npz', f)
+            tmp = f'{f}.{os.getpid()}.tmp.npz'
+            np.savez(tmp, **d)
+            os.replace(tmp, f)
         datas.append(d)
     res = combine(datas, norm, betas)
-    res.update(info, elapsed_s=time.time() - t0, backend=be.name)
+    res.update(info, elapsed_s=time.time() - t0, backend=be.name, tol=tol, sym=sym)
     return res
 
 

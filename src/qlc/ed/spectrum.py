@@ -5,13 +5,16 @@ For a Hermitian current A and probe B (B = A by default) in the eigenbasis H|n> 
     W_mn            = A_mn B_nm                                  (= |A_mn|^2 for B = A)
     Drude block sum S_K = sum_{m,n in K} W_mn                    K = degenerate energy block
     static          diag_m = sum_n W_mn = (A B)_mm
-    correlation     num(t) = sum_m p_m e^{i E_m t} sum_n W_mn e^{-i E_n t},   p_m = e^{-beta (E_m - E_0)}
+    correlation     X_m(t) = e^{i E_m t} sum_n W_mn e^{-i E_n t}
 
-so that  Tr(rho A(t) B) = sum over blocks of num(t),  and the infinite-time average keeps only E_m = E_n.
-The eigenvector matrix is processed in column chunks, so the memory is one D x D matrix plus O(D x chunk);
-W is never stored.  Everything runs on the chosen backend (NumPy or torch/GPU).
+so that  Tr(rho A(t) B) = sum_m p_m X_m(t)  with p_m = e^{-beta E_m}, and the infinite-time average keeps only
+E_m = E_n.  All stored data are independent of beta (any beta is evaluated in `combine`).  The eigenvector matrix
+is processed in column chunks, so W is never stored.  Peak memory per block is about 4 D^2 x 16 bytes on the CPU
+(H, eigenvectors and LAPACK workspace; H is overwritten where possible), plus O(D x chunk) and D x n_t for C(t).
+Everything runs on the chosen backend (NumPy or torch/GPU).
 """
 import time
+
 import numpy as np
 
 from .algebra import apply_terms
@@ -24,21 +27,21 @@ def degenerate_blocks(E, tol=1e-9):
     return np.concatenate([[0], np.cumsum(cut)]).astype(np.int64)
 
 
-def sector_data(rep, A, B=None, ts=None, betas=(0.0,), be=None, tol=1e-9, chunk=1024, log=None):
-    """spectral data of one block.
+def sector_data(rep, A, B=None, ts=None, be=None, tol=1e-9, chunk=1024, log=None):
+    """beta-independent spectral data of one block.
 
-    rep: Representation; A, B: lists of terms (a, b, phase) (B None: B = A); ts: times for C(t) (or None);
-    betas: inverse temperatures for the correlation sums.  Returns a dict of NumPy arrays:
-      E, block (block id per level), SB (block sums), diag, E0, and if ts is given num[beta] (complex, len(ts)),
-      Z[beta] = sum_m p_m, with p_m = exp(-beta (E_m - E0)), E0 = min E.
+    rep: Representation; A, B: lists of terms (a, b, phase) (B None: B = A); ts: times for C(t) (or None).
+    Returns a dict of NumPy arrays: E, block (block id per level), SB (block sums), diag, E0 = min E, and with ts
+    also X (dim x len(ts)).
     """
     from ..backend import get_backend
     be = be or get_backend()
+    if int(chunk) < 1:
+        raise ValueError('chunk must be a positive integer')
+    chunk = int(chunk)
     t0 = time.time()
     D = rep.dim
-    Hm = rep.dense(rep.op_terms('H'), be)
-    E, V = be.eigh(Hm)
-    del Hm
+    E, V = be.eigh(rep.dense(rep.op_terms('H'), be))      # the dense H is not kept (eigh may overwrite it)
     be.sync()
     t_eigh = time.time() - t0
     En = be.to_numpy(E).real.astype(float)
@@ -71,15 +74,10 @@ def sector_data(rep, A, B=None, ts=None, betas=(0.0,), be=None, tol=1e-9, chunk=
         np.add.at(SB, bid[s:e], col)
         if ts is not None:
             WU = WU + Wc @ U[s:e]
-    out = dict(E=En, block=bid, SB=SB, diag=be.to_numpy(diag), E0=E0, dim=D, weight=rep.weight,
-               t_eigh=t_eigh, betas=list(map(float, betas)))
+    out = dict(E=En, block=bid, SB=SB, diag=be.to_numpy(diag), E0=E0, dim=D, weight=rep.weight, t_eigh=t_eigh)
     if ts is not None:
-        X = U.conj() * WU                                        # e^{i E_m t} sum_n W_mn e^{-i E_n t}
         out['ts'] = ts
-        for b in betas:
-            p = be.asarray(np.exp(-b * (En - E0)))
-            out[f'num_{b:g}'] = be.to_numpy((p[:, None] * X).sum(0))
-            out[f'Z_{b:g}'] = float(np.exp(-b * (En - E0)).sum())
+        out['X'] = be.to_numpy(U.conj() * WU)
     be.sync()
     out['t_total'] = time.time() - t0
     if log:
@@ -93,11 +91,11 @@ def combine(datas, norm, betas, with_ct=True):
 
     D(beta)  = sum_K e^{-beta E_K} S_K / (norm Z)        (infinite-time average of <A(t) B>/norm)
     C0(beta) = sum_m p_m (AB)_mm / (norm Z)
-    C(t)     = sum num(t) / (norm Z)                     (if the data contain ts)
+    C(t)     = sum_m p_m X_m(t) / (norm Z)               (if the data contain ts)
     """
     Eg = min(d['E0'] for d in datas)
     res = dict(betas=list(map(float, betas)), D=[], C0=[])
-    has_t = with_ct and all('ts' in d for d in datas)
+    has_t = with_ct and all('X' in d for d in datas)
     if has_t:
         res['ts'] = np.asarray(datas[0]['ts'])
         res['C'] = []
@@ -113,10 +111,7 @@ def combine(datas, norm, betas, with_ct=True):
             Dn += w * np.sum(np.exp(-b * (EK - Eg)) * d['SB'])
             C0 += w * np.sum(p * d['diag'])
             if has_t:
-                key = f'num_{b:g}'
-                if key not in d:
-                    raise KeyError(f'correlation for beta={b:g} was not computed')
-                Ct = Ct + w * np.exp(-b * (d['E0'] - Eg)) * d[key]
+                Ct = Ct + w * (p @ d['X'])
         res['D'].append(complex(Dn / (norm * Z)))
         res['C0'].append(complex(C0 / (norm * Z)))
         if has_t:
