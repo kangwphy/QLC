@@ -54,7 +54,7 @@ def test_static_values():
     assert np.abs(r['C'][0].imag).max() < 1e-10           # real at beta = 0 only; at beta > 0 C(t)* = C(-t)
 
 
-@pytest.mark.parametrize('L,bc,probe', [(8, 'pbc', 'total'), (10, 'obc', 'local'), (9, 'obc', 'total')])
+@pytest.mark.parametrize('L,bc,probe', [(8, 'pbc', 'total'), (9, 'obc', 'local'), (8, 'obc', 'total')])
 def test_independent_dense_reference(L, bc, probe):
     """C(t) = Tr(rho A(t) B)/(norm Tr rho), A(t) = e^{iHt} A e^{-iHt}, against expm, incl. Im C at beta > 0"""
     from scipy.linalg import expm
@@ -132,3 +132,30 @@ def test_backends_agree(name):
     assert np.allclose(r1['D'], r2['D'], atol=1e-10)
     for a, b in zip(r1['C'], r2['C']):
         assert np.allclose(a, b, atol=1e-10)
+
+
+def test_corrupt_cache_is_recomputed(tmp_path):
+    import glob
+    r1 = run_ed(9, 'pbc', betas=[0.5], outdir=str(tmp_path), log=None)
+    f = sorted(glob.glob(str(tmp_path / '*.npz')))[0]
+    open(f, 'wb').write(b'not a zip file')
+    msgs = []
+    r2 = run_ed(9, 'pbc', betas=[0.5], outdir=str(tmp_path), log=msgs.append)
+    assert any('recomputing' in m for m in msgs) and np.allclose(r1['D'], r2['D'])
+
+
+def test_open_chain_negative_offsets():
+    """a pattern written with negative offsets is the same translation sum"""
+    a = run_ed(10, 'obc', op={(-1, 0, 1): 1j}, betas=[0.5], ts=TS, log=None)
+    b = run_ed(10, 'obc', op={(0, 1, 2): 1j}, betas=[0.5], ts=TS, log=None)
+    assert np.allclose(a['C0'], b['C0']) and np.allclose(a['C'][0], b['C'][0])
+
+
+def test_inplace_eigh():
+    rng = np.random.default_rng(3)
+    X = rng.normal(size=(60, 60)) + 1j * rng.normal(size=(60, 60))
+    H = X + X.conj().T
+    w, v = get_backend().eigh(H.copy())
+    assert np.allclose(H @ v, v * w) and np.allclose(v.conj().T @ v, np.eye(60))
+    w2, v2 = get_backend().eigh(np.asfortranarray(H))
+    assert np.allclose(w, w2)

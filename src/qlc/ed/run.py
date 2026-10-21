@@ -16,6 +16,7 @@ and further temperatures reuse the diagonalisations.
 import hashlib
 import json
 import os
+import tempfile
 import time
 
 import numpy as np
@@ -71,22 +72,27 @@ def run_ed(L, bc='pbc', op='J', probe='total', betas=(0.0,), ts=None, method='re
     for rep in reps:
         f = os.path.join(outdir, f'{rep.label}_{key}.npz') if outdir else None
         if f and os.path.exists(f):
-            z = np.load(f, allow_pickle=False)
-            d = {k: z[k] for k in z.files}
-            for k in ('E0', 'weight', 'dim'):
-                d[k] = d[k].item()
-            d['weight'] = rep.weight
-            datas.append(d)
-            if log:
-                log(f'  {rep.label}: loaded from {f}')
-            continue
+            try:
+                with np.load(f, allow_pickle=False) as z:
+                    d = {k: z[k] for k in z.files}
+                for k in ('E0', 'weight', 'dim'):
+                    d[k] = d[k].item()
+                d['weight'] = rep.weight
+                datas.append(d)
+                if log:
+                    log(f'  {rep.label}: loaded from {f}')
+                continue
+            except Exception as err:                 # damaged file (e.g. an interrupted write): recompute
+                if log:
+                    log(f'  {rep.label}: cache file {f} unreadable ({err!r}), recomputing')
         A = rep.op_terms(op)
         B = None if probe == 'total' else rep.local_terms(op, centres)
         d = sector_data(rep, A, B, ts=ts, be=be, tol=tol, chunk=chunk, log=log)
         if f:
             os.makedirs(outdir, exist_ok=True)
-            tmp = f'{f}.{os.getpid()}.tmp.npz'
-            np.savez(tmp, **d)
+            fd, tmp = tempfile.mkstemp(dir=outdir, prefix=f'.{rep.label}_', suffix='.tmp.npz')
+            with os.fdopen(fd, 'wb') as fh:
+                np.savez(fh, **d)
             os.replace(tmp, f)
         datas.append(d)
     res = combine(datas, norm, betas)

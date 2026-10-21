@@ -69,10 +69,11 @@ python scripts/drude.py results/mpo/*.json results/ed/pbc_L*_J_total_*.json
 python scripts/drude.py --richardson results/mpo/run_dt0.05.json results/mpo/run_dt0.025.json
 ```
 
-All runs write JSON after every sample.  Default output names contain the key parameters plus a short hash of
-all of them except `tmax`, so job-array scans never collide and resubmitting the same command (also with a larger
-`--tmax`) resumes from the checkpoint (`<out>.ckpt.pkl`).  ED caches every sector, independent of $\beta$
-(`results/ed/sectors/`), so further temperatures reuse the diagonalisations.  Library use:
+TN runs (`run_mpo.py`, `run_mps.py`) write JSON after every sample; their default output names contain the key
+parameters plus a short hash of all of them except `tmax`, so job-array scans never collide and resubmitting the
+same command (also with a larger `--tmax`) resumes from the checkpoint (`<out>.ckpt.pkl`).  ED output names are
+built from the parameters (L, bc, op, probe, t grid, betas); every sector is cached independently of $\beta$
+(`results/ed/sectors/`), so further temperatures reuse the diagonalisations (a new t grid recomputes).  Library use:
 
 ```python
 from qlc.ed import run_ed
@@ -100,7 +101,7 @@ differ by an $O(dt^2)$ Trotter term (the circuit conserves $Q_1$ only approximat
 ## Tests
 
 ```bash
-pytest -m "not slow"     # ~1 min: dense same-circuit checks of every engine, note values, backends, scripts
+pytest -m "not slow"     # ~1-2 min: dense same-circuit checks of every engine, note values, backends, scripts
 pytest -m slow           # bulk reference data at beta = 0 and beta = 1 (a few minutes)
 ```
 

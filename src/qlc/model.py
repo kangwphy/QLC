@@ -101,7 +101,7 @@ class Chain:
                 idx = [j + o for o in offs]
                 if self.bc == 'pbc':
                     idx = [i % self.L for i in idx]
-                elif max(idx) >= self.n_terms:
+                elif min(idx) < 0 or max(idx) >= self.n_terms:
                     continue
                 out.append((c, idx))
         return out

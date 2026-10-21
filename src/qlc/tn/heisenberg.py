@@ -10,8 +10,10 @@ The split route evolves only the part of J that is not carried by Q1 (norm 2 ins
 truncation much better at long times.  C(t) = sum_x C_x(t) is summed over shifts |x| <= x0 + v t (light cone,
 v = 7.3 > max velocity 7.24) and C_{-x} = C_x by time reversal.  The Drude weight is the long-time value of C_J(t)
 (see qlc.analysis).  Open window of n spins (n - 2 words): with folding the operator spreads v t / 2 to each side,
-so the infinite-chain value is obtained for t <~ (n - 2 - span) / v (n = 64 for t <= 6).  At beta > 0 the window
-must also hold the thermal factor (n >= 32 at beta = 1).  Only K-odd operators (currents) are allowed at beta > 0:
+so the light-cone front reaches the window edge at t_edge = (n - 2 - span) / v; window errors of ~1e-4 already
+appear around t ~ t_edge / 2 to 2 t_edge / 3, so monitor `edge_weight` (a warning is printed above 1e-4; the note
+used n = 64 for t <= 6 and n = 96 for t <= 3.2).  At beta > 0 the window must also hold the thermal factor
+(n >= 32 at beta = 1).  Only K-odd operators (currents) are allowed at beta > 0:
 for K-even ones <o>_beta != 0 and the sum would contain the disconnected part.
 """
 import json
@@ -99,12 +101,12 @@ def run_hword(route='split', n=64, beta=0.0, chi=256, tol=1e-12, dt=0.05, tmax=6
     params = dict(method='h-word MPO, time folding', route=route, op=opname if isinstance(opname, str) else
                   {','.join(map(str, k)): [complex(v).real, complex(v).imag] for k, v in sorted(pat.items())},
                   n=n, beta=beta, chi=chi, tol=tol, dt=dt, chi_rho=chi_rho, tau_im=tau_im, x0=x0, vlc=vlc,
-                  sample_every=sample_every, cj0=cj0)
+                  sample_every=sample_every, cj0=cj0, version=2)
     steps = int(round(tmax / 2 / dt))
     need = (hi - lo + 1) + vlc * tmax
     if log and m < need:
-        log(f'WARNING: window of {m} words is smaller than span + v tmax = {need:.0f}: the light cone reaches the '
-            f'edges before tmax (see edge_weight / capped in the samples)')
+        log(f'WARNING: window of {m} words is smaller than span + v tmax = {need:.0f}: the light-cone front reaches '
+            f'the edges at t = {(m - (hi - lo + 1)) / vlc:.2f} < tmax (watch edge_weight)')
     if log and beta > 0 and n < 32:
         log('WARNING: at beta ~ 1 the thermal factor needs n >= 32 (n = 24 is off by ~3% in static values)')
     t0 = time.time()
@@ -150,7 +152,7 @@ def run_hword(route='split', n=64, beta=0.0, chi=256, tol=1e-12, dt=0.05, tmax=6
                 (f'; rho^1/2 bond {rho0.bond()}' if rho0 is not None else '') +
                 (f'; C_J(0) = {res["C_J0"]:.8f} ({res["C_J0_source"]})' if 'C_J0' in res else '') +
                 f'  [{time.time() - t0:.1f}s]')
-    warned_cap = False
+    warned_cap = warned_edge = False
     for it in range(it0, steps + 1):
         if it > 0:
             loss += M.sweep('rot', dt, chi, tol)
@@ -167,12 +169,18 @@ def run_hword(route='split', n=64, beta=0.0, chi=256, tol=1e-12, dt=0.05, tmax=6
                        discarded=loss, bond=M.bond(), meas_s=0.0, elapsed_s=0.0, rss_gib=rss_gib())
             if rho_t is None:
                 row['edge_weight'] = M.edge_weight()
-            else:
+            else:                                    # occupation of the edge words beyond that of rho^{1/2} itself
+                row['edge_weight'] = abs(M.edge_weight() - rho_t.edge_weight())
                 row.update(rho_bond=rho_t.bond(), discarded_rho=loss_rho)
             row['meas_s'], row['elapsed_s'] = time.time() - tm, time.time() - t0
-            if row['capped'] and log and not warned_cap:
+            if log and row['edge_weight'] > 1e-4 and not warned_edge:
+                warned_edge = True
+                log(f'WARNING: t = {t:g}: edge_weight = {row["edge_weight"]:.1e} > 1e-4: the operator has reached '
+                    f'the window boundary; use a larger --n for later times')
+            if log and row['capped'] and row['edge'] > 1e-6 and not warned_cap:
                 warned_cap = True
-                log(f'WARNING: t = {t:g}: shift sum capped at the window size (x0 + v t > {m - 1})')
+                log(f'WARNING: t = {t:g}: shift sum capped at the window size while the last shift still '
+                    f'contributes {row["edge"]:.1e}')
             if save_profile:
                 row['profile'] = [[v.real, v.imag] for v in prof]
             res['samples'].append(row)

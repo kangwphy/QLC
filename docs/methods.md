@@ -28,8 +28,8 @@ Every sector is saved as an `.npz` whose content does not depend on $\beta$ (ene
 for $C(t)$, $X_m(t)=e^{iE_mt}\sum_nW_{mn}e^{-iE_nt}$, a $D\times n_t$ array); any $\beta$ is evaluated afterwards,
 so further temperatures reuse the diagonalisations.  Thermal weights use a common reference energy (no overflow
 at large $\beta$).  **Memory** per block: about $4D^2\times16$ bytes on the CPU (dense $H$, eigenvectors, LAPACK
-workspace; NumPy overwrites $H$ in place), i.e. 1 GiB at $D=4096$, 4 GiB at 8192, 16 GiB at 16384, 64 GiB at
-32768; on a GPU at least $H$, $V$ and the cuSOLVER workspace (an 80 GB card for $D=32768$).  The operator must be
+workspace, measured about $3D^2\times16$ plus $\sim5D\times\text{chunk}\times16$ bytes of chunk buffers), i.e.
+~1 GiB at $D=4096$, ~4 GiB at 8192, ~16 GiB at 16384, ~64 GiB at 32768 (upper estimates); on a GPU at least $H$, $V$ and the cuSOLVER workspace (an 80 GB card for $D=32768$).  The operator must be
 Hermitian (checked).  A local probe on an open chain is centred and must fit completely (checked).
 
 ## 2. h-word MPO Heisenberg evolution (`qlc.tn.heisenberg`)
@@ -49,11 +49,15 @@ MPO; the sum runs over $|x|\le x_0+v t$ ($v=7.3$).
 * Routes: `direct` ($o=j$) and `split` ($o=r$; $C_J=C_R-C_R(0)+C_J(0)$, $C_J(0)$ exact at $\beta=0$ and from the
   same thermal factor at $\beta>0$, or given with `--cj0`).
 
-**Validity**: the folded operator spreads by $v\,t/2$ to each side; keep the light cone inside the window,
-$n-2\gtrsim v\,t_{\max}+$ operator span ($n=64$ for $t\le6$ as in the note; a warning is printed otherwise).
+**Validity**: the folded operator spreads by $v\,t/2$ to each side, so the light-cone front reaches the window edge
+at $t_{\rm edge}=(n-2-\text{span})/v$.  Window errors of $\sim10^{-4}$ in $C_J$ already appear around
+$t_{\rm edge}/2$ to $2t_{\rm edge}/3$ (split, $\chi=64$: $n=32$ is $1.4\times10^{-3}$ off at $t=3$), so watch
+`edge_weight`; a warning is printed when it exceeds $10^{-4}$.  The note used $n=96$ for $t\le3.2$ and $n=64$ up to
+$t=6$.
 Diagnostics per sample: `discarded` (truncation of the evolved operator; `discarded_init` for its construction),
-`discarded_rho` / `discarded_rho_init` (thermal factor), `edge_weight` ($\beta=0$: occupation weight of the outermost
-words, i.e. how much of the operator reached the window boundary), `capped` (shift sum limited by the window).
+`discarded_rho` / `discarded_rho_init` (thermal factor), `edge_weight` (occupation weight of the outermost words,
+i.e. how much of the operator reached the window boundary; at $\beta>0$ relative to that of $\rho^{1/2}$ itself),
+`capped` (shift sum limited by the window).
 Errors to control: truncation (`chi`, `chi_rho`), Trotter ($O(dt^2)$, Richardson with
 `scripts/drude.py --richardson`), window ($n$), and at $\beta>0$ `tau_im`.
 

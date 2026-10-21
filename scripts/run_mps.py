@@ -4,7 +4,8 @@
 An independent check of the h-word MPO (different representation, thermal state and correlation formula).
   --route direct : j_c|psi>, J|psi>   -> C_J(t)
   --route split  : r_c|psi>, R|psi>   -> C_R(t),  C_J = C_R - C_R(0) + C_J(0)  (C_J(0) on the same state)
-The thermal state can be cached with --psi-file (reused when L, beta, dtau, chi_psi agree).  Checkpoints as in
+The thermal state can be cached with --psi-file: it is reused when L, beta, dtau, chi_psi and tol_psi agree; a
+file made with other parameters is an error (use a different --psi-file).  Checkpoints as in
 run_mpo.py.  Use dt <= 0.025 at beta ~ 1 (the 3-sublattice circuit has a larger method error than the h-word one).
 
 examples

@@ -5,7 +5,9 @@ Rings (--bc pbc) use the reduced representation (block dimension 2^k: N = 24 -> 
 sector per translation orbit.  Open chains (--bc obc) have D_N = 0 exactly; use --probe local for the bulk-like
 C(t) = <J(t) j_c> that the MPO / MPS codes compute.  Each sector is cached (beta-independent) in
 <out>/sectors/<bc>_L<L>_<op>_<probe>/, so an interrupted run restarts where it stopped and other temperatures
-reuse it.  Output: <out>/<bc>_L<L>_<op>_<probe>[_t<tmax>_dt<dt>]_b<betas>.json.
+reuse it (a different t grid is a new cache entry).
+Output: <out>/<bc>_L<L>_<op>_<probe>[_nosym][_t<tmax>_dt<dt>][_full][_tol<tol>]_b<betas>.json (more than four
+betas: b<first>-<last>_n<count>_<hash>).
 Memory per block: about 4 D^2 x 16 bytes (D = 8192: ~4 GiB, 16384: ~16 GiB, 32768: ~64 GiB).
 
 examples
@@ -18,6 +20,7 @@ import _setup
 _setup.setup(default_threads=None)
 
 import argparse
+import hashlib
 import json
 import os
 import time
@@ -50,8 +53,12 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     for L in a.L:
         base = f'{a.bc}_L{L}_{a.op}_{a.probe}' + ('_nosym' if a.no_sym and a.probe == 'local' else '')
+        bl = '-'.join(f'{b:g}' for b in a.beta)
+        if len(a.beta) > 4:                     # long temperature scans: first, last, count and a hash
+            bl = f'{a.beta[0]:g}-{a.beta[-1]:g}_n{len(a.beta)}_' + \
+                 hashlib.sha1(','.join(map(repr, a.beta)).encode()).hexdigest()[:6]
         tag = (f'_t{a.tmax:g}_dt{a.dt:g}' if ts is not None else '') + ('_full' if a.method == 'full' else '') + \
-              (f'_tol{a.tol:g}' if a.tol != 1e-9 else '') + '_b' + '-'.join(f'{b:g}' for b in a.beta)
+              (f'_tol{a.tol:g}' if a.tol != 1e-9 else '') + '_b' + bl
         name = base + tag
         t0 = time.time()
         res = run_ed(L, a.bc, op=a.op, probe=a.probe, betas=a.beta, ts=ts, method=a.method, tol=a.tol,

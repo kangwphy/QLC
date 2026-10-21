@@ -51,21 +51,22 @@ class NumpyBackend:
 
     # ------------------------------------------------------------------ linear algebra
     def svd(self, m):
-        """thin SVD m = U diag(s) Vh, validated (see svd_ok); falls back to LAPACK gesvd"""
+        """thin SVD m = U diag(s) Vh; falls back to LAPACK gesvd if gesdd does not converge"""
         try:
-            u, s, v = np.linalg.svd(m, full_matrices=False)
-            if svd_ok(self, m, u, s, v):
-                return u, s, v
+            return np.linalg.svd(m, full_matrices=False)
         except np.linalg.LinAlgError:
-            pass
-        from scipy.linalg import svd
-        return svd(m, full_matrices=False, lapack_driver='gesvd')
+            from scipy.linalg import svd
+            return svd(m, full_matrices=False, lapack_driver='gesvd')
+
+    def host(self, s):
+        """host (NumPy) copy of a small vector such as singular values"""
+        return s
 
     def qr(self, m):
         return np.linalg.qr(m)
 
     def eigh(self, h):
-        """eigh of a matrix that may be overwritten (lower peak memory)"""
+        """eigh (LAPACK heevd); h may be overwritten.  Needs about 2 D^2 (complex) beyond h itself."""
         from scipy.linalg import eigh
         return eigh(h, overwrite_a=True, check_finite=False, driver='evd')
 
@@ -157,11 +158,11 @@ class TorchBackend(NumpyBackend):
     def svd(self, m):
         """torch SVD, validated: some builds (e.g. torch on macOS / Accelerate) return wrong factors for
         rank-deficient matrices without raising.  Fallbacks: driver 'gesvd' (CUDA), then SciPy on the CPU;
-        the dtype of the input is kept."""
+        the dtype of the input is kept.  The checks need one device-to-host transfer (shared with `host(s)`)."""
         t = self.torch
         try:
             u, s, v = t.linalg.svd(m, full_matrices=False)
-            if svd_ok(self, m, u, s, v):
+            if self._svd_ok(m, u, s, v):
                 return u, s, v
         except Exception:
             pass
@@ -169,13 +170,37 @@ class TorchBackend(NumpyBackend):
         if m.is_cuda:
             try:
                 u, s, v = t.linalg.svd(m, full_matrices=False, driver='gesvd')
-                if svd_ok(self, m, u, s, v):
+                if self._svd_ok(m, u, s, v):
                     return u, s, v
             except Exception:
                 pass
         u, s, v = _NP.svd(self.to_numpy(m))
         dt = complex if np.iscomplexobj(u) else float
         return self.asarray(u, dt), self.asarray(s, float), self.asarray(v, dt)
+
+    def _svd_ok(self, m, u, s, v, rtol=1e-9, tol=1e-8):
+        """O(mn) checks on the device: sum s^2 = |m|_F^2, m x = U s Vh x, U and Vh orthonormal on probe vectors;
+        all scalars and s are moved to the host in one transfer"""
+        t = self.torch
+        x, nx = _probe(self, m.shape[1], m, 0)
+        y, ny = _probe(self, u.shape[1], u, 1)
+        vals = t.stack([t.linalg.norm(m) ** 2, (s ** 2).sum(), t.linalg.norm(m @ x - u @ (s * (v @ x))),
+                        t.linalg.norm(u.conj().T @ (u @ y) - y), t.linalg.norm(v @ (v.conj().T @ y) - y)])
+        h = t.cat([s.real if s.is_complex() else s, vals]).cpu().numpy()
+        s_h, (fro2, s2, r, ou, ov) = h[:-5], h[-5:]
+        self._s_host = (s, s_h)
+        if not np.all(np.isfinite(h)):
+            return False
+        if fro2 == 0:
+            return True
+        return (abs(s2 - fro2) <= rtol * fro2 and r <= tol * np.sqrt(fro2) * nx and ou <= tol * ny and
+                ov <= tol * ny)
+
+    def host(self, s):
+        c = getattr(self, '_s_host', None)
+        if c is not None and c[0] is s:
+            return c[1]
+        return self.to_numpy(s)
 
     def qr(self, m):
         return self.torch.linalg.qr(m, mode='reduced')
@@ -222,37 +247,13 @@ _PROBES = {}
 
 
 def _probe(be, n, like, key):
-    """fixed pseudo-random probe vector of length n with the dtype/device of `like`"""
+    """fixed pseudo-random probe vector of length n (dtype/device of `like`) and its norm"""
     k = (be.name, str(be.device), n, be.is_complex(like), key)
     if k not in _PROBES:
         rng = np.random.default_rng(12345 + n + 7 * key)
         x = rng.normal(size=n) + (1j * rng.normal(size=n) if be.is_complex(like) else 0)
-        _PROBES[k] = be.asarray(x, complex if be.is_complex(like) else float)
+        _PROBES[k] = (be.asarray(x, complex if be.is_complex(like) else float), float(np.linalg.norm(x)))
     return _PROBES[k]
-
-
-def svd_ok(be, m, u, s, v, rtol=1e-9):
-    """cheap O(mn) checks of a thin SVD: finite, sum s^2 = |m|_F^2, m x = U s Vh x and U, Vh orthonormal
-    on probe vectors"""
-    s_h = np.asarray(be.to_numpy(s), dtype=float)
-    if not np.all(np.isfinite(s_h)):
-        return False
-    fro2 = float(be.to_numpy(be.abs2(m).sum()))
-    if fro2 == 0:
-        return True
-    if abs(float((s_h ** 2).sum()) - fro2) > rtol * fro2:
-        return False
-    tol = 1e-8
-    x = _probe(be, m.shape[1], m, 0)
-    r = m @ x - u @ (s * (v @ x))
-    if be.norm(r) > tol * np.sqrt(fro2) * be.norm(x):
-        return False
-    y = _probe(be, u.shape[1], u, 1)
-    if be.norm(u.conj().T @ (u @ y) - y) > tol * be.norm(y):
-        return False
-    if be.norm(v @ (v.conj().T @ y) - y) > tol * be.norm(y):
-        return False
-    return True
 
 
 def eigh_ok(be, h, w, v):
@@ -260,11 +261,11 @@ def eigh_ok(be, h, w, v):
     w_h = np.asarray(be.to_numpy(w), dtype=float)
     if not np.all(np.isfinite(w_h)):
         return False
-    x = _probe(be, h.shape[0], v, 2)
+    x, nx = _probe(be, h.shape[0], v, 2)
     nh = be.norm(h)
-    if be.norm(h @ (v @ x) - v @ (w * x)) > 1e-9 * max(nh, 1e-300) * be.norm(x):
+    if be.norm(h @ (v @ x) - v @ (w * x)) > 1e-9 * max(nh, 1e-300) * nx:
         return False
-    return be.norm(v.conj().T @ (v @ x) - x) <= 1e-9 * be.norm(x)
+    return be.norm(v.conj().T @ (v @ x) - x) <= 1e-9 * nx
 
 
 def get_backend(name='numpy', device=None):

@@ -12,14 +12,15 @@ import itertools
 import shlex
 import sys
 
+MULTI = {'run_ed.py': {'--L', '--beta'}}          # options that accept several values
+
 
 def main(argv):
     if not argv or argv[0].startswith('-'):
         print(__doc__)
         return 1
     script, rest = argv[0], argv[1:]
-    if script.startswith('scripts/'):
-        script = script[len('scripts/'):]
+    script = script.replace('\\', '/').rsplit('/', 1)[-1]
     if rest and not rest[0].startswith('--'):
         print(f'make_jobs: value {rest[0]!r} before the first option', file=sys.stderr)
         return 2
@@ -37,6 +38,11 @@ def main(argv):
             groups[-1][1].append(tok)
     flags = [k for k, v in groups if not v]
     groups = [(k, v) for k, v in groups if v]
+    multi = MULTI.get(script, set())
+    for k, v in groups:
+        if any(',' in x for x in v) and k not in multi:
+            print(f'make_jobs: warning: {k} of {script} takes one value; "{",".join(v)}" with commas will give '
+                  f'an invalid command (use spaces for a scan)', file=sys.stderr)
     for combo in itertools.product(*[v for _, v in groups]):
         parts = [py, f'scripts/{script}']
         for (k, _), val in zip(groups, combo):

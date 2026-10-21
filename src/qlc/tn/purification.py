@@ -184,7 +184,7 @@ def run_purification(route='split', L=64, beta=1.0, chi=256, chi_psi=192, tol=1e
     params = dict(method='spin-basis purification TEBD', route=route,
                   op=opname if isinstance(opname, str) else str(sorted(pat.items())), L=L, beta=beta, chi=chi,
                   chi_psi=chi_psi, tol=tol, tol_psi=tol_psi, dt=dt, dtau=dtau, dtau_eff=tau_eff, n_im_steps=nst,
-                  centres=cs, sym=int(sym))
+                  centres=cs, sym=int(sym), version=2)
     nsteps = int(round(tmax / 2 / dt))
     t0 = time.time()
     lostA = lostB = 0.0

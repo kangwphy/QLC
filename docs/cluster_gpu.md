@@ -7,7 +7,7 @@ git clone git@github.com:kangwphy/QLC.git && cd QLC
 conda create -n qlc python=3.11 numpy scipy pytest -y && conda activate qlc
 pip install -e .
 pip install torch            # GPU nodes only (CUDA build, or the ROCm / DTK build on AMD / Hygon DCU)
-pytest -m "not slow"         # ~1 min
+pytest -m "not slow"         # ~1-2 min
 ```
 Edit `slurm/env.sh` (modules, conda env).  All batch scripts are run from the repository root.
 

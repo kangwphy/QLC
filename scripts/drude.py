@@ -63,14 +63,16 @@ def report_ed(files, t_min):
     rows = {}
     for f in files:
         r = load(f)
-        key = (r['bc'], r.get('op', 'J'), r.get('probe', 'total'), r.get('sym', True))
+        key = (r['bc'], r.get('op', 'J'), r.get('probe', 'total'),
+               r.get('sym', True) if r.get('probe', 'total') == 'local' else True)
         for i, (b, D) in enumerate(zip(r['betas'], r['D'])):
             rows.setdefault(key + (b,), {})[r['L']] = (D[0], f, r, i)
     for (bc, op, probe, sym, b), d in sorted(rows.items()):
         Ns = sorted(d)
         is_ref = bc == 'pbc' and op == 'J' and probe == 'total'
         ref = theory.drude_ghd(b) if is_ref else None
-        print(f'ED {bc}, op = {op}, probe = {probe}, beta = {b:g}' + (f'   (D_GHD = {ref:.8f})' if ref else ''))
+        print(f'ED {bc}, op = {op}, probe = {probe}' + ('' if sym or probe == 'total' else ', nosym') +
+              f', beta = {b:g}' + (f'   (D_GHD = {ref:.8f})' if ref else ''))
         for N in Ns:
             D = d[N][0]
             print(f'   L = {N:3d}   D_N = {D:.8f}' + (f'   D_N / D_GHD - 1 = {D / ref - 1:+.3e}' if ref else ''))

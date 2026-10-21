@@ -9,8 +9,8 @@ For a Hermitian current A and probe B (B = A by default) in the eigenbasis H|n> 
 
 so that  Tr(rho A(t) B) = sum_m p_m X_m(t)  with p_m = e^{-beta E_m}, and the infinite-time average keeps only
 E_m = E_n.  All stored data are independent of beta (any beta is evaluated in `combine`).  The eigenvector matrix
-is processed in column chunks, so W is never stored.  Peak memory per block is about 4 D^2 x 16 bytes on the CPU
-(H, eigenvectors and LAPACK workspace; H is overwritten where possible), plus O(D x chunk) and D x n_t for C(t).
+is processed in column chunks, so W is never stored.  Peak memory per block (measured): about 3 D^2 x 16 bytes for
+H, eigenvectors and LAPACK workspace, plus ~5 D x chunk x 16 bytes of chunk buffers and D x n_t for C(t).
 Everything runs on the chosen backend (NumPy or torch/GPU).
 """
 import time

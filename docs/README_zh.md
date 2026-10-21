@@ -28,7 +28,7 @@ $t\lesssim2$ 两者都由同一 Trotter 误差限制。在有限开链上（纯�
 
 ```bash
 pip install -e .                       # numpy, scipy；GPU 另装 torch
-pytest -m "not slow"                   # 约 1 分钟
+pytest -m "not slow"                   # 约 1-2 分钟
 
 python scripts/run_ed.py --L 12 14 16 18 20 --bc pbc --beta 0 0.5 1 2          # D_N(beta)
 python scripts/run_ed.py --L 24 --beta 0 1 --tmax 20 --dt 0.05                  # + C_N(t)

@@ -27,7 +27,7 @@ def imaginary_steps(beta, dtau):
 
 def truncation(be, s, chi, tol):
     """(kept rank, discarded weight sum of s^2) from one host copy of the singular values"""
-    s_h = be.to_numpy(s)
+    s_h = be.host(s)
     rk = keep_rank(s_h, chi, tol)
     return rk, float((s_h[rk:] ** 2).sum())
 

@@ -2,6 +2,7 @@
 import glob
 import json
 import os
+import shlex
 import subprocess
 import sys
 
@@ -22,6 +23,8 @@ def test_ed_scripts(tmp_path):
     ed = json.load(open(tmp_path / 'ed' / 'pbc_L10_J_total_t0.5_dt0.05_b0-1.json'))
     assert abs(ed['C0'][0][0] - 20) < 1e-12 and len(ed['C']) == 2
     run([f'{S}/run_ed.py', '--L', '10', '--op', 'R', '--beta', '0', '--out', 'ed'], tmp_path)
+    run([f'{S}/run_ed.py', '--L', '8', '--beta', '0', '0.1', '0.2', '0.3', '0.4', '0.5', '--out', 'long'], tmp_path)
+    assert len(glob.glob(str(tmp_path / 'long' / 'pbc_L8_J_total_b0-0.5_n6_*.json'))) == 1
     run([f'{S}/run_ed.py', '--L', '12', '--bc', 'obc', '--probe', 'local', '--beta', '0', '--tmax', '2',
          '--out', 'ed'], tmp_path)
     r = run([f'{S}/drude.py'] + sorted(glob.glob(str(tmp_path / 'ed' / '*.json'))), tmp_path).stdout
@@ -65,7 +68,10 @@ def test_make_jobs(tmp_path):
              tmp_path).stdout.strip().splitlines()
     assert len(ed) == 2 and all('--beta 0 1' in x and 'scripts/scripts' not in x for x in ed)
     for line in ed:                                                            # the generated lines run
-        r = subprocess.run(line.replace('python3', sys.executable, 1).replace('scripts/', S + '/', 1), shell=True,
-                           cwd=tmp_path, capture_output=True, text=True)
+        argv = shlex.split(line)
+        argv[0], argv[1] = sys.executable, os.path.join(S, os.path.basename(argv[1]))
+        r = subprocess.run(argv, cwd=tmp_path, capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
+    w = run([f'{S}/make_jobs.py', './scripts/run_mpo.py', '--beta', '0,1'], tmp_path)
+    assert 'warning' in w.stderr and w.stdout.startswith('python3 scripts/run_mpo.py')
     assert run([f'{S}/make_jobs.py', 'run_ed.py', '8', '--L', '8'], tmp_path, ok=False).returncode == 2
