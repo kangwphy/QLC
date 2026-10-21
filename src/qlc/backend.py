@@ -1,0 +1,219 @@
+"""Array backends: NumPy (default) or PyTorch on CPU / GPU.
+
+All heavy linear algebra in qlc goes through a backend object, so the same code runs on CPU and GPU::
+
+    be = get_backend()                          # NumPy
+    be = get_backend('torch', device='cuda')    # NVIDIA GPU; ROCm / Hygon-DCU builds of torch also use 'cuda'
+
+Everything is double precision (complex128 / float64).  Apple 'mps' devices have no complex128 and are refused.
+The backend only wraps the few operations whose spelling differs between NumPy and torch; ordinary arithmetic,
+slicing, ``reshape``, ``@`` and ``.conj()`` are used directly on the arrays.
+"""
+import numpy as np
+
+
+class NumpyBackend:
+    name = 'numpy'
+    device = 'cpu'
+
+    # ------------------------------------------------------------------ creation / conversion
+    def asarray(self, x, dtype=complex):
+        return np.asarray(x, dtype=dtype)
+
+    def to_numpy(self, x):
+        return np.asarray(x)
+
+    def zeros(self, shape, dtype=complex):
+        return np.zeros(shape, dtype=dtype)
+
+    def eye(self, n, dtype=complex):
+        return np.eye(n, dtype=dtype)
+
+    def arange(self, n):
+        return np.arange(n)
+
+    # ------------------------------------------------------------------ shape
+    def permute(self, a, axes):
+        return np.transpose(a, axes)
+
+    def concat(self, arrays, axis=0):
+        return np.concatenate(arrays, axis=axis)
+
+    def copy(self, a):
+        return a.copy()
+
+    # ------------------------------------------------------------------ contraction
+    def tensordot(self, a, b, axes):
+        return np.tensordot(a, b, axes=axes)
+
+    def einsum(self, spec, *ops):
+        return np.einsum(spec, *ops, optimize=True)
+
+    # ------------------------------------------------------------------ linear algebra
+    def svd(self, m):
+        """thin SVD m = U diag(s) Vh; falls back to LAPACK gesvd if gesdd does not converge"""
+        try:
+            return np.linalg.svd(m, full_matrices=False)
+        except np.linalg.LinAlgError:
+            from scipy.linalg import svd
+            return svd(m, full_matrices=False, lapack_driver='gesvd')
+
+    def qr(self, m):
+        return np.linalg.qr(m)
+
+    def eigh(self, h):
+        return np.linalg.eigh(h)
+
+    def norm(self, a):
+        return float(np.linalg.norm(a))
+
+    # ------------------------------------------------------------------ elementwise
+    def exp(self, a):
+        return np.exp(a)
+
+    def abs2(self, a):
+        return a.real ** 2 + a.imag ** 2
+
+    def is_complex(self, a):
+        return np.iscomplexobj(a)
+
+    def real_part(self, a):
+        return np.ascontiguousarray(a.real)
+
+    def to_complex(self, a):
+        return a.astype(complex)
+
+    def add_at(self, mat, rows, cols, vals):
+        """mat[rows, cols] += vals for index pairs without repetition"""
+        mat[rows, cols] += vals
+
+    def take_rows(self, a, idx):
+        return a[idx]
+
+    def sync(self):
+        pass
+
+
+class TorchBackend(NumpyBackend):
+    name = 'torch'
+
+    def __init__(self, device=None):
+        import torch
+        self.torch = torch
+        if device in (None, 'gpu', 'auto'):
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = torch.device(device)
+        if self.device.type == 'mps':
+            raise ValueError("Apple 'mps' has no complex128; use device='cpu' or a CUDA/ROCm GPU")
+        self._dtypes = {complex: torch.complex128, float: torch.float64, int: torch.int64, bool: torch.bool,
+                        np.complex128: torch.complex128, np.float64: torch.float64, np.int64: torch.int64}
+
+    def _dt(self, dtype):
+        return self._dtypes[dtype]
+
+    def asarray(self, x, dtype=complex):
+        t = self.torch
+        if isinstance(x, t.Tensor):
+            return x.to(device=self.device, dtype=self._dt(dtype))
+        return t.as_tensor(np.asarray(x, dtype=dtype), device=self.device)
+
+    def to_numpy(self, x):
+        if isinstance(x, self.torch.Tensor):
+            return x.detach().resolve_conj().cpu().numpy()
+        return np.asarray(x)
+
+    def zeros(self, shape, dtype=complex):
+        return self.torch.zeros(shape, dtype=self._dt(dtype), device=self.device)
+
+    def eye(self, n, dtype=complex):
+        return self.torch.eye(n, dtype=self._dt(dtype), device=self.device)
+
+    def arange(self, n):
+        return self.torch.arange(n, device=self.device)
+
+    def permute(self, a, axes):
+        return a.permute(*axes)
+
+    def concat(self, arrays, axis=0):
+        return self.torch.cat(arrays, dim=axis)
+
+    def copy(self, a):
+        return a.clone()
+
+    def tensordot(self, a, b, axes):
+        if not isinstance(axes, int):
+            axes = tuple([x] if isinstance(x, int) else list(x) for x in axes)
+        return self.torch.tensordot(a, b, dims=axes)
+
+    def einsum(self, spec, *ops):
+        return self.torch.einsum(spec, *ops)
+
+    def svd(self, m):
+        t = self.torch
+        try:
+            return t.linalg.svd(m, full_matrices=False)
+        except Exception:                      # rare non-convergence: retry with the robust driver, then on the CPU
+            if m.is_cuda:
+                try:
+                    return t.linalg.svd(m, full_matrices=False, driver='gesvd')
+                except Exception:
+                    pass
+            u, s, v = NumpyBackend.svd(self, self.to_numpy(m))
+            return self.asarray(u), self.asarray(s, float), self.asarray(v)
+
+    def qr(self, m):
+        return self.torch.linalg.qr(m, mode='reduced')
+
+    def eigh(self, h):
+        return self.torch.linalg.eigh(h)
+
+    def norm(self, a):
+        return float(self.torch.linalg.norm(a))
+
+    def exp(self, a):
+        return self.torch.exp(a)
+
+    def abs2(self, a):
+        return a.real ** 2 + a.imag ** 2 if a.is_complex() else a ** 2
+
+    def is_complex(self, a):
+        return a.is_complex()
+
+    def real_part(self, a):
+        return a.real.contiguous() if a.is_complex() else a
+
+    def to_complex(self, a):
+        return a.to(self.torch.complex128)
+
+    def add_at(self, mat, rows, cols, vals):
+        mat.index_put_((rows, cols), vals, accumulate=True)
+
+    def take_rows(self, a, idx):
+        return a.index_select(0, idx)
+
+    def sync(self):
+        if self.device.type == 'cuda':
+            self.torch.cuda.synchronize()
+
+
+def get_backend(name='numpy', device=None):
+    """name: 'numpy' | 'torch' (CPU or GPU) | 'gpu' (= torch on cuda)"""
+    if name in (None, 'numpy', 'np'):
+        return NumpyBackend()
+    if name == 'torch':
+        return TorchBackend(device)
+    if name in ('gpu', 'cuda'):
+        return TorchBackend(device or 'cuda')
+    raise ValueError(f'unknown backend {name!r}')
+
+
+def set_threads(n):
+    """limit BLAS/OpenMP threads; call before numpy does any heavy work (scripts do this before importing numpy)"""
+    import os
+    for k in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS', 'NUMEXPR_NUM_THREADS'):
+        os.environ[k] = str(n)
+    try:
+        import torch
+        torch.set_num_threads(int(n))
+    except Exception:
+        pass

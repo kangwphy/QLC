@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qlc"
+version = "0.1.0"
+description = "Energy transport and Drude weight of the free-fermions-in-disguise (FFD) chain: ED, h-word MPO evolution, purification MPS"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.22", "scipy>=1.8"]
+
+[project.optional-dependencies]
+gpu = ["torch>=2.0"]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: longer regression tests (deselect with -m 'not slow')"]
