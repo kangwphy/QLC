@@ -95,10 +95,10 @@ class WordMPO(MPS):
 
     def _gate(self, name, x):
         cache = self.__dict__.setdefault('_gates', {})
-        real = name == 'rot' and not self.is_complex()
+        real = name in ('rot', 'imag_h') and not self.is_complex()
         key = (name, round(x, 15), real)
         if key not in cache:
-            G = {'rot': hword.rotation_matrix, 'imag': hword.imag_matrix}[name](x)
+            G = {'rot': hword.rotation_matrix, 'imag': hword.imag_matrix, 'imag_h': hword.imag_matrix_h}[name](x)
             cache[key] = self.be.asarray(G.real if real else G, float if real else complex)
         return cache[key]
 
@@ -138,7 +138,8 @@ class WordMPO(MPS):
 
     def sweep(self, kind, step, chi, tol):
         """palindromic second-order product of the 5-site maps of all words; kind 'rot' (Heisenberg e^{iH step})
-        or 'imag' (left multiplication by e^{-step H}).  Returns the discarded weight."""
+        or 'imag' (left multiplication by e^{-step H}, B_S basis) or 'imag_h' (the same in the h_S basis, real).
+        Returns the discarded weight."""
         if kind == 'imag':
             self.make_complex()
         last = len(self.A) - 5

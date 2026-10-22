@@ -15,8 +15,11 @@ Three independent engines, all with NumPy (CPU) or PyTorch (CPU / GPU) back ends
 | `qlc.ed` | exact diagonalisation in the reduced (irreducible-block) representation of the h-algebra: finite-size Drude weight $D_N(\beta)$ and $C_N(t)$ | ring (`pbc`, block $2^k$: $N=24\to1024$, $N=30\to8192$, $N=33\to32768$) and open chain (`obc`) |
 | `qlc.tn.heisenberg` | h-word MPO Heisenberg evolution with time folding, **direct route** (evolve $j$) and **split route** (evolve $R$, $J=3Q_1+R$), $\beta=0$ and $\beta>0$ | infinite chain from an open window of $n$ spins ($n=64$ for $t\le6$; $n\ge32$ at $\beta\sim1$) |
 | `qlc.tn.purification` | spin-basis purification MPS + TEBD (independent check), same two routes | open chain of $L$ spins |
+| `qlc.tn.mazur` | **static Mazur bound** $D\ge b^\top G^{+}b$ from the quasi-local charges as exact MPS (5-state automata), thermal kernel from $e^{-\beta H}$ as a word MPS; no time evolution | infinite chain from a window of $m$ words |
 
-The Drude weight is measured directly as the long-time value of $C_J(t)$ (`qlc.analysis`, `scripts/drude.py`) and compared with the closed forms in `qlc.theory` ($M^\star$, $D_{\rm GHD}(\beta)$, Mazur kernels, Onsager coefficient).
+The Drude weight is measured directly as the long-time value of $C_J(t)$ (`qlc.analysis`, `scripts/drude.py`), bounded
+from below statically by the Mazur bound of the charge MPS (`scripts/run_mazur.py`), and compared with the closed forms
+in `qlc.theory` ($M^\star$, $D_{\rm GHD}(\beta)$, Mazur kernels, Onsager coefficient).
 
 ## Layout
 
@@ -26,10 +29,11 @@ src/qlc/
   backend.py        NumPy / torch (CPU, CUDA, ROCm) array backend
   ed/               algebra.py (reduced representation, sectors, translation orbits), spectrum.py, run.py
   tn/               mps.py (canonical MPS, k-site gates), hword.py (local 5-bit maps), wordmpo.py (word MPO,
-                    shifted overlaps), heisenberg.py (direct / split driver), purification.py
+                    shifted overlaps), heisenberg.py (direct / split driver), purification.py,
+                    charges.py (quasi-local charges as MPS), mazur.py (static Mazur bound)
   analysis.py       Drude estimators (plateau, tail fit, running mean), Richardson, 1/N extrapolation
   theory.py         closed forms of the note
-scripts/            run_ed.py  run_mpo.py  run_mps.py  drude.py  make_jobs.py
+scripts/            run_ed.py  run_mpo.py  run_mps.py  run_mazur.py  drude.py  make_jobs.py  benchmark.py
 slurm/              array_cpu.sbatch  gpu.sbatch  env.sh
 tests/              pytest suite (dense same-circuit checks, note values, reference data, backends, scripts)
 data/reference/     small reference series: C_J(t) at beta = 0 (N = 96, chi = 512) and beta = 1 (h-word TN)
@@ -63,6 +67,9 @@ python scripts/run_mpo.py --route split --n 64 --beta 1 --chi 256 --chi-rho 128 
 # purification MPS (independent method)
 python scripts/run_mps.py --route split --L 64 --beta 1 --chi 256 --chi-psi 192 --dt 0.025 --tmax 4 \
     --psi-file results/mps/psi_b1_L64.pkl
+
+# static Mazur bound at several temperatures (one imaginary-time trajectory; GPU for chi >= 128)
+python scripts/run_mazur.py --beta 0 0.5 1 2 --chi 256 --backend gpu       # 4th-order imaginary time, tau 0.05
 
 # Drude weight from the outputs (+ Richardson extrapolation of two dt)
 python scripts/drude.py results/mpo/*.json results/ed/pbc_L*_J_total_*.json

@@ -11,6 +11,7 @@
 | `qlc.ed` | h-代数约化表示下的全对角化：有限尺寸 Drude 权重 $D_N(\beta)$、关联 $C_N(t)$ | 周期环 `pbc`（块维数 $2^k$：$N=24\to1024$，$N=30\to8192$）与开链 `obc` |
 | `qlc.tn.heisenberg` | h-word MPO Heisenberg 演化 + 时间折叠：**直接路线**（演化 $j$）与**拆分路线**（$J=3Q_1+R$，只演化 $R$），$\beta=0$ 与 $\beta>0$ | 无穷链（$n$ 个自旋的开窗口） |
 | `qlc.tn.purification` | 自旋基纯化 MPS + TEBD（独立检验），同样两条路线 | $L$ 个自旋的开链 |
+| `qlc.tn.mazur` | **静态 Mazur 下界**：准局域荷写成精确 MPS（5 态自动机），$e^{-\beta H}$ 写成 word MPS，算热核 $G_{ab}$ 与 $\langle J,Q_a\rangle$，不做时间演化 | 无穷链（$m$ 个 word 的窗口） |
 
 Drude 权重直接从 $C_J(t)$ 的长时值读出（`qlc.analysis`、`scripts/drude.py`：整周期平台平均、尾巴拟合、
 运行平均、dt 的 Richardson 外推、$1/N$ 外推），并与 `qlc.theory` 的闭式（$M^\star=18.6027$、$D_{\rm GHD}(\beta)$、
@@ -42,6 +43,7 @@ python scripts/run_mpo.py --route split  --n 64 --beta 1 --chi 256 --chi-rho 128
 python scripts/run_mps.py --route split --L 64 --beta 1 --chi 256 --chi-psi 192 --dt 0.025 --tmax 4 \
     --psi-file results/mps/psi_b1_L64.pkl
 
+python scripts/run_mazur.py --beta 0 0.5 1 2 --chi 256 --backend gpu      # 静态 Mazur 下界（四阶虚时，tau 0.05）
 python scripts/drude.py results/mpo/*.json results/ed/pbc_L*_J_total_*.json
 python scripts/drude.py --richardson run_dt0.05.json run_dt0.025.json
 ```

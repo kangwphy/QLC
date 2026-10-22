@@ -75,7 +75,42 @@ at $\beta\sim1$).  No translation or conjugation tricks, so it is an independent
 finite open chain the direct route sees the boundary-induced decay of the $Q_1$ part (it equals OBC ED with a
 local probe), the split route stays close to the bulk.
 
-## 4. Drude weight from $C_J(t)$ (`qlc.analysis`)
+## 4. Static Mazur bound from the charge MPS (`qlc.tn.charges`, `qlc.tn.mazur`)
+
+No time evolution: $D(\beta)\ge M(\beta)=b^\top G^+b$ with $G_{ab}=\langle Q_a,Q_b\rangle_\beta$, $b_a=\langle J,Q_a\rangle_\beta$
+(per site), for the even parts $Q^{\lambda,+}_p$, $Q^{\gamma,+}_p$, the local $Q_1$, and the odd parts $Q^{\gamma,-}_p$
+that couple to the even ones at $\beta>0$ (all Hermitian and $T$-odd, so $\langle Q\rangle_\beta=0$).
+
+* **Charges as MPS.**  In the basis of ordered products $h_S$ a Type I word is a sequence of blocks separated by single
+  empty sites with a product of block weights ($\lambda$: $w(1)=i\sqrt{-1-p}/p$, $w(2)=1/p$; $\gamma$:
+  $w(b)=(-1)^bp(1+p)^{b/2-1}$, $b\ge2$; overall factor $i$); a 5-state automaton generates all of them, so a charge is
+  an exact MPS of bond 5 (window sum or bulk density with first word at $y_0$); even/odd parts are
+  $(Q[w]\pm Q[(-1)^bw])/2$.  Checked against word enumeration and the coefficients of the note (App. B).
+* **Thermal factor.**  In the $h_S$ basis left multiplication is a real sign, $h_ch_S=(-1)^{n_{c-1}+n_{c-2}}h_{S\oplus c}$,
+  so $\rho=e^{-\beta H}$ has real coefficients; it is built by imaginary-time steps (size $\le\tau$, bond $\chi$), and one
+  trajectory gives every requested $\beta$.  The second-order sweep biases $M$ upwards by $O(\tau^2)$ ($+0.25\%$ at
+  $\beta=1$, $\tau=0.05$), so the default is the 4th-order Suzuki composition $S_2(s\tau)S_2((1-2s)\tau)S_2(s\tau)$,
+  $s=1/(2-2^{1/3})$: at $\beta=1$ the error of $M$ is $4\times10^{-5}$ ($\tau=0.05$) and $2\times10^{-6}$ ($\tau=0.025$).  Bond of $e^{-\beta H}$ at cutoff $10^{-10}$: 25, 48, 97, 160, 235 at
+  $\beta=0.25,0.5,1,1.5,2$.
+* **Correlations.**  $G_{ab}=\omega(\rho\,Q_a\,q_{b,y_0})/\omega(\rho)$ with $Q_a$ the window sum and $q_{b,y_0}$ the bulk
+  density; $\omega(\rho AB)=\sum_U\rho_U(AB)_U(-1)^{a(U)}$ with $(AB)_U=\sum_{S\oplus T=U}a_Sb_T\,\mathrm{sign}(S,T)$,
+  $\mathrm{sign}=(-1)^{\#\{s\in S,t\in T:\,s-t\in\{1,2\}\}}$.  One environment sweep with the last two bits of $T$ and
+  of $U$ (16 states) gives the whole matrix $\omega(\rho A_aB_b)$ at once (`omega_matrix`), cost $O(m\chi^2K^2D^2)$.
+* **Window.**  The charge words are cut at the window: for the default set $m-y_0\approx200$ words keeps every tail
+  below $\sim10^{-6}$ ($\gamma$ at $p=-0.8$ and $\lambda$ at $p=-1.25$ decay slowest); `beta0_check` compares the window
+  kernels and the window bound with the closed forms at $\beta=0$.  The left buffer $y_0$ must exceed the thermal
+  boundary layer of the open window, which grows with $\beta$ (default $\max(24,16\beta_{\max})$; $y_0=16$ is off by
+  $10^{-2}$ at $\beta=3$).  Asymmetry of $G$ (`G_asym`) and the disagreement of the two estimates of $b$ (`b_twoway`)
+  measure the remaining window error and are logged with a warning.  A too small window makes $M$ overshoot.
+* **Cutoff.**  $G$ is very ill-conditioned (condition number $\sim10^8$ for 17 charges at $\beta=0$, smallest relative
+  eigenvalues $\sim10^{-11}$ at $\beta=2$).  The eigenvalue cutoff is raised to the estimated noise of $G$ (window tails,
+  `G_asym`); dropping directions only lowers the bound (projection on a sub-span).  $M$ for a scan of cutoffs is
+  stored with every point.
+* **Checks** (`tests/test_mazur.py`): automata vs enumeration, Hermiticity, odd-kernel closed form
+  $pq\sqrt{(1+p)(1+q)}/\Delta(p,q)$, contractions vs dense matrices of the same imaginary-time circuit ($10^{-12}$),
+  $\beta=0$ bound vs the exact rational `theory.mazur_bound`, numpy vs torch.
+
+## 5. Drude weight from $C_J(t)$ (`qlc.analysis`)
 
 `plateau` (mean over the longest whole number of tail periods $2\pi/3\sqrt3$ in $[t_{\min},t_{\max}]$),
 `tail_fit` ($D+(a\cos\omega t+b\sin\omega t)/t^3$), `running_mean`; `drude_estimates` returns all with their

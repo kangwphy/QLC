@@ -14,6 +14,9 @@ Every map built from h_c changes only bit c and depends on the bits c-2..c+2.  O
                                                       = cos(2d) B_S + sin(2d) (i phi) B_{S xor c}   (l + r odd)
     imaginary time        e^{-tau h_c} X = cosh(tau) X - sinh(tau) h_c X
     time reversal         K B_S K = (-1)^{a(S)} B_S        (h_j real in the sigma^z basis)
+
+In the basis of plain ordered products h_S (used by qlc.tn.mazur) left multiplication is a real sign,
+h_c h_S = (-1)^{n_{c-1}+n_{c-2}} h_{S xor c}, so e^{-beta H} has real coefficients there.
 """
 import itertools
 import math
@@ -57,6 +60,22 @@ LMULT = left_mult_matrix()
 def imag_matrix(tau):
     """X -> e^{-tau h_c} X"""
     return math.cosh(tau) * np.eye(32) - math.sinh(tau) * LMULT
+
+
+def left_mult_matrix_h():
+    """X -> h_c X in the basis of ordered products h_S (no i^{a(S)}): h_c h_S = (-1)^{n_{c-1} + n_{c-2}} h_{S xor c}"""
+    M = np.zeros((32, 32))
+    for src, b in enumerate(BITS):
+        M[src ^ CENTRE, src] = (-1) ** (b[0] + b[1])
+    return M
+
+
+LMULT_H = left_mult_matrix_h()
+
+
+def imag_matrix_h(tau):
+    """X -> e^{-tau h_c} X in the h_S basis (real)"""
+    return math.cosh(tau) * np.eye(32) - math.sinh(tau) * LMULT_H
 
 
 def a_count(S):

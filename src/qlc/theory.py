@@ -91,6 +91,13 @@ def mazur_kernel(p, q):
     return g / (l - g)
 
 
+def mazur_kernel_odd(p, q):
+    """<Q_p^{gamma,-}, Q_q^{gamma,-}> per site at beta = 0 (words of odd size): pq sqrt((1+p)(1+q)) / Delta(p, q)"""
+    if not (-1 < p < 0 and -1 < q < 0):
+        raise ValueError('odd kernel implemented for the gamma family (-1 < p < 0) only')
+    return p * q * math.sqrt((1 + p) * (1 + q)) / (p * p * q * q - 3 * p * q - p - q)
+
+
 def mazur_overlap(p):
     """<J, Q_p^+> per site"""
     _check_p(p)
