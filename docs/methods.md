@@ -110,23 +110,34 @@ that couple to the even ones at $\beta>0$ (all Hermitian and $T$-odd, so $\langl
   $pq\sqrt{(1+p)(1+q)}/\Delta(p,q)$, contractions vs dense matrices of the same imaginary-time circuit ($10^{-12}$),
   $\beta=0$ bound vs the exact rational `theory.mazur_bound`, numpy vs torch.
 
-**Results** (`scripts/run_mazur.py --beta 0 0.25 0.5 1 1.5 2 --chi 192 --tau 0.05`, default 17 charges: $Q_1$,
-$Q^{\lambda,+}_p$ at $p=-1.25,-1.6,-2.2,-3.5,-6,-12$, $Q^{\gamma,\pm}_p$ at $p=-0.2,-0.35,-0.5,-0.65,-0.8$;
-$m=232$, $y_0=32$; 4th-order imaginary time; 16 cores of a Xeon Gold 6542Y, 1.1 h in total):
+**Results** (`scripts/run_mazur.py --beta 0 0.25 0.5 1 1.5 2 --chi 256 --tau 0.05 --backend gpu`, default 17 charges:
+$Q_1$, $Q^{\lambda,+}_p$ at $p=-1.25,-1.6,-2.2,-3.5,-6,-12$, $Q^{\gamma,\pm}_p$ at $p=-0.2,-0.35,-0.5,-0.65,-0.8$;
+$m=232$, $y_0=32$; 4th-order imaginary time; one H100 NVL):
 
 | $\beta$ | 0 | 0.25 | 0.5 | 1 | 1.5 | 2 |
 |---|---|---|---|---|---|---|
-| $M_{\rm full}/D_{\rm GHD}$ | 1.000000 | 0.999993 | 0.999976 | 0.999952 | 0.999961 | 0.99991–0.99998 |
-| $M_{\rm even}/D_{\rm GHD}$ | 1.000000 | 0.998259 | 0.993970 | 0.979826 | 0.958709 | 0.935411 |
+| $D_{\rm GHD}(\beta)$ | 18.60271 | 15.19322 | 9.32235 | 2.88133 | 1.02324 | 0.44276 |
+| $M_{\rm full}/D_{\rm GHD}$ | 1.000000 | 0.999993 | 0.999976 | 0.999992$^\dagger$ | 0.999961 | 0.99991–0.99998 |
+| $M_{\rm even}/D_{\rm GHD}$ | 1.000000 | 0.998259 | 0.993970 | 0.979865$^\dagger$ | 0.958709 | 0.935415$^\dagger$ |
 
-With the odd parts $Q^{\gamma,-}$ the bound reaches $D_{\rm GHD}(\beta)$ to $\le10^{-4}$ for $\beta\le2$; the even parts
-alone fall short by up to 6.5% at $\beta=2$, as in the note (App. E, Fig. 2a).  At $\beta=0$, $M=18.60270017$
-against $M^\star=18.60270784$ (the family value with $Q_1$ is $18.60270024$).  The range at $\beta=2$ is the
-dependence on the eigenvalue cutoff ($2.5\times10^{-6}$ to $10^{-8}$); at $\beta\ge1.5$ the window diagnostics
-(`G_asym` $\sim10^{-5}$) and $\chi=192<235$ limit the accuracy to $\sim10^{-4}$.
+$^\dagger$ $\tau=0.025$.  Convergence: $\chi=192$ and $256$ agree to $10^{-7}$ (bond of $e^{-2H}$: 243); $\tau=0.05\to0.025$
+changes $M/D_{\rm GHD}$ by $4\times10^{-5}$ at $\beta=1$ and $4\times10^{-6}$ at $\beta=2$.  With the odd parts $Q^{\gamma,-}$
+the bound reaches $D_{\rm GHD}(\beta)$ to $\le10^{-4}$ for $\beta\le2$ (to $10^{-5}$ for $\beta\le1$); the even parts alone
+fall short by up to 6.5% at $\beta=2$, as in the note (App. E, Fig. 2a).  At $\beta=0$, $M=18.60270017$ against
+$M^\star=18.60270784$ (the family value with $Q_1$ is $18.60270024$).  The range at $\beta=2$ is the dependence on the
+eigenvalue cutoff ($2.5\times10^{-6}$ to $10^{-8}$); there the window diagnostics (`G_asym` $\sim2\times10^{-5}$) limit the
+accuracy to $\sim10^{-4}$ (larger $y_0$ and $m$ would improve it).
 
-Timings (Xeon Gold 6542Y, MKL, 16 threads, $m=224$, 17 charges): one imaginary-time sweep 7.5 s ($\chi=64$),
-30 s ($\chi=128$); one evaluation of $G$ and $b$ 144 s ($\chi=64$), 259 s ($\chi=128$).
+Timings ($m=232$, 17 charges; one imaginary-time sweep / one evaluation of $G$ and $b$):
+
+| $\chi$ | 64 | 128 | 256 | 512 |
+|---|---|---|---|---|
+| H100 NVL (torch) | 12 s / 1.2 s | 31 s / 1.9 s | 99 s / 3.6 s | 337 s / 7.7 s |
+| Xeon Gold 6542Y, 16 threads (MKL) | 7.5 s / 144 s | 30 s / 259 s | — | — |
+
+The evaluation of $G$ and $b$ is ~100x faster on the GPU; the imaginary-time sweeps (sequential SVDs) gain only for
+$\chi\gtrsim256$.  The full scan above took 56 min on the GPU (almost all in the sweeps; order 4 needs three sweeps per
+step) and 1.1 h on 16 CPU cores at $\chi=192$.
 
 ## 5. Drude weight from $C_J(t)$ (`qlc.analysis`)
 
