@@ -110,6 +110,24 @@ that couple to the even ones at $\beta>0$ (all Hermitian and $T$-odd, so $\langl
   $pq\sqrt{(1+p)(1+q)}/\Delta(p,q)$, contractions vs dense matrices of the same imaginary-time circuit ($10^{-12}$),
   $\beta=0$ bound vs the exact rational `theory.mazur_bound`, numpy vs torch.
 
+**Results** (`scripts/run_mazur.py --beta 0 0.25 0.5 1 1.5 2 --chi 192 --tau 0.05`, default 17 charges: $Q_1$,
+$Q^{\lambda,+}_p$ at $p=-1.25,-1.6,-2.2,-3.5,-6,-12$, $Q^{\gamma,\pm}_p$ at $p=-0.2,-0.35,-0.5,-0.65,-0.8$;
+$m=232$, $y_0=32$; 4th-order imaginary time; 16 cores of a Xeon Gold 6542Y, 1.1 h in total):
+
+| $\beta$ | 0 | 0.25 | 0.5 | 1 | 1.5 | 2 |
+|---|---|---|---|---|---|---|
+| $M_{\rm full}/D_{\rm GHD}$ | 1.000000 | 0.999993 | 0.999976 | 0.999952 | 0.999961 | 0.99991–0.99998 |
+| $M_{\rm even}/D_{\rm GHD}$ | 1.000000 | 0.998259 | 0.993970 | 0.979826 | 0.958709 | 0.935411 |
+
+With the odd parts $Q^{\gamma,-}$ the bound reaches $D_{\rm GHD}(\beta)$ to $\le10^{-4}$ for $\beta\le2$; the even parts
+alone fall short by up to 6.5% at $\beta=2$, as in the note (App. E, Fig. 2a).  At $\beta=0$, $M=18.60270017$
+against $M^\star=18.60270784$ (the family value with $Q_1$ is $18.60270024$).  The range at $\beta=2$ is the
+dependence on the eigenvalue cutoff ($2.5\times10^{-6}$ to $10^{-8}$); at $\beta\ge1.5$ the window diagnostics
+(`G_asym` $\sim10^{-5}$) and $\chi=192<235$ limit the accuracy to $\sim10^{-4}$.
+
+Timings (Xeon Gold 6542Y, MKL, 16 threads, $m=224$, 17 charges): one imaginary-time sweep 7.5 s ($\chi=64$),
+30 s ($\chi=128$); one evaluation of $G$ and $b$ 144 s ($\chi=64$), 259 s ($\chi=128$).
+
 ## 5. Drude weight from $C_J(t)$ (`qlc.analysis`)
 
 `plateau` (mean over the longest whole number of tail periods $2\pi/3\sqrt3$ in $[t_{\min},t_{\max}]$),
