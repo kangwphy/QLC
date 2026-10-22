@@ -11,3 +11,5 @@ logs/
 jobs/
 *.ckpt.pkl
 *.tmp
+*.out
+*.prof
