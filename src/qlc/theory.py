@@ -27,6 +27,14 @@ T_TAIL = 2 * math.pi / OMEGA_TAIL
 CJ0_BETA0 = 20.0
 
 
+def thermal_energy(beta):
+    """free lambda fermions: (<H>/N, <H,H>) = (-int eps tanh(beta eps), int eps^2 sech^2(beta eps)) dtheta/pi over the
+    lambda band (lax_drude.tex Table tab:ft-ref; the gamma modes have zero energy)"""
+    e = -quad(lambda q: eps(q) * np.tanh(beta * eps(q)) / math.pi, 0, math.pi / 3, limit=200)[0]
+    hh = quad(lambda q: eps2(q) / np.cosh(beta * eps(q)) ** 2 / math.pi, 0, math.pi / 3, limit=200)[0]
+    return e, hh
+
+
 def eps2(theta):
     return (1 + 2 * np.cos(2 * theta)) ** 3 / (4 * np.cos(theta) ** 2)
 

@@ -22,13 +22,15 @@ PATTERNS = {
     'J': {(0, 1): 2j, (0, 2): 4j},
     'R': {(0, 1): -1j, (0, 2): 1j},
     'Q1': {(0, 1): 1j, (0, 2): 1j},
+    # Q2: coefficient of p^-2 in Q^{lambda,+}_p (note, Remark 3.4); <Q2,Q2> = 6, <Q1,Q2> = 1, <J,Q2> = 4 at beta = 0
+    'Q2': {(0, 2): 1j, (0, 1, 3, 4): 1j, (0, 2, 4, 5): 1j, (0, 2, 3, 5): 1j, (0, 1, 3, 5): 1j, (0, 2, 4, 6): 1j},
     # current of the third local charge H_3 = H^3 - 3 H I_2 + 3 I_3 (note, App. F)
     'J3': {(0, 1): 6j, (0, 2): 14j, (0, 1, 3, 4): 2j, (0, 1, 3, 5): 2j, (0, 2, 3, 5): 4j, (0, 2, 4, 5): 4j,
            (0, 2, 4, 6): 4j},
 }
 
 # exact infinite-temperature static values <A, A> per site (word shapes of distinct translation classes are orthonormal)
-STATIC_BETA0 = {'J': 20.0, 'R': 2.0, 'Q1': 2.0, 'H': 1.0}
+STATIC_BETA0 = {'J': 20.0, 'R': 2.0, 'Q1': 2.0, 'Q2': 6.0, 'H': 1.0}
 
 
 def pattern(op):

@@ -8,7 +8,7 @@ and its Drude weight $D(T)=\lim_{\tau\to\infty}\frac1\tau\int_0^\tau dt\,\lim_{N
 At infinite temperature the quasi-local charges give the Mazur bound
 $D(\infty)\ge M^\star = 32-243\sqrt3/(10\pi)=18.6027$, which the numerics here are consistent with saturating.
 
-Three independent engines, all with NumPy (CPU) or PyTorch (CPU / GPU) back ends:
+Independent engines, all with NumPy (CPU) or PyTorch (CPU / GPU) back ends:
 
 | engine | what | boundary / size |
 |---|---|---|
@@ -16,24 +16,28 @@ Three independent engines, all with NumPy (CPU) or PyTorch (CPU / GPU) back ends
 | `qlc.tn.heisenberg` | h-word MPO Heisenberg evolution with time folding, **direct route** (evolve $j$) and **split route** (evolve $R$, $J=3Q_1+R$), $\beta=0$ and $\beta>0$ | infinite chain from an open window of $n$ spins ($n=64$ for $t\le6$; $n\ge32$ at $\beta\sim1$) |
 | `qlc.tn.purification` | spin-basis purification MPS + TEBD (independent check), same two routes | open chain of $L$ spins |
 | `qlc.tn.mazur` | **static Mazur bound** $D\ge b^\top G^{+}b$ from the quasi-local charges as exact MPS (5-state automata), thermal kernel from $e^{-\beta H}$ as a word MPS; no time evolution | infinite chain from a window of $m$ words |
+| `qlc.tn.imazur` | **static Mazur bound on the infinite chain** (the method of the note's Fig. 2a): purification iMPS with a three-site cell (`qlc.tn.imps`, 4th-order Suzuki), charges as exact Pauli MPOs (`qlc.tn.pauli_mpo`), $G$ and $b$ from the cell transfer matrix with exact sums over word lengths and separations | infinite chain, no window |
 
 The Drude weight is measured directly as the long-time value of $C_J(t)$ (`qlc.analysis`, `scripts/drude.py`), bounded
-from below statically by the Mazur bound of the charge MPS (`scripts/run_mazur.py`), and compared with the closed forms
+from below statically by the Mazur bound of the charges (`scripts/run_imazur.py` on the infinite chain,
+`scripts/run_mazur.py` in a window), and compared with the closed forms
 in `qlc.theory` ($M^\star$, $D_{\rm GHD}(\beta)$, Mazur kernels, Onsager coefficient).
 
 ## Layout
 
 ```
 src/qlc/
-  model.py          chain, h_j, current patterns J R Q1 J3 H, boundary conditions, dense matrices
+  model.py          chain, h_j, current patterns J R Q1 Q2 J3 H, boundary conditions, dense matrices
   backend.py        NumPy / torch (CPU, CUDA, ROCm) array backend
   ed/               algebra.py (reduced representation, sectors, translation orbits), spectrum.py, run.py
   tn/               mps.py (canonical MPS, k-site gates), hword.py (local 5-bit maps), wordmpo.py (word MPO,
                     shifted overlaps), heisenberg.py (direct / split driver), purification.py,
-                    charges.py (quasi-local charges as MPS), mazur.py (static Mazur bound)
+                    charges.py (quasi-local charges as MPS), mazur.py (static Mazur bound in a window),
+                    pauli_mpo.py (charges as spin MPOs), imps.py (thermal iMPS), imazur.py (iMPS Mazur bound)
   analysis.py       Drude estimators (plateau, tail fit, running mean), Richardson, 1/N extrapolation
   theory.py         closed forms of the note
-scripts/            run_ed.py  run_mpo.py  run_mps.py  run_mazur.py  drude.py  make_jobs.py  benchmark.py
+scripts/            run_ed.py  run_mpo.py  run_mps.py  run_mazur.py  run_imazur.py  drude.py  make_jobs.py
+                    benchmark.py
 slurm/              array_cpu.sbatch  gpu.sbatch  env.sh
 tests/              pytest suite (dense same-circuit checks, note values, reference data, backends, scripts)
 data/reference/     small reference series: C_J(t) at beta = 0 (N = 96, chi = 512) and beta = 1 (h-word TN)
@@ -68,8 +72,10 @@ python scripts/run_mpo.py --route split --n 64 --beta 1 --chi 256 --chi-rho 128 
 python scripts/run_mps.py --route split --L 64 --beta 1 --chi 256 --chi-psi 192 --dt 0.025 --tmax 4 \
     --psi-file results/mps/psi_b1_L64.pkl
 
-# static Mazur bound at several temperatures (one imaginary-time trajectory; GPU for chi >= 128)
-python scripts/run_mazur.py --beta 0 0.5 1 2 --chi 256 --backend gpu       # 4th-order imaginary time, tau 0.05
+# static Mazur bound at several temperatures (one imaginary-time trajectory)
+python scripts/run_imazur.py --beta 0.5 1 2 --chi 64 --threads 8           # infinite chain (iMPS), family of Fig. 2a
+                                                                           # (beta >= 3: chi >= 128, GPU)
+python scripts/run_mazur.py --beta 0 0.5 1 2 --chi 256 --backend gpu       # window MPS, 4th-order imaginary time
 
 # Drude weight from the outputs (+ Richardson extrapolation of two dt)
 python scripts/drude.py results/mpo/*.json results/ed/pbc_L*_J_total_*.json

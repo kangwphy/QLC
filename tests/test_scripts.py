@@ -59,6 +59,15 @@ def test_tn_scripts(tmp_path):
     assert 'running mean' in out and 'WARNING' in out                           # runs shorter than one period
 
 
+def test_imazur_scripts(tmp_path):
+    run([f'{S}/run_imazur.py', '--beta', '0', '0.1', '--chi', '4', '--family', 'qlc'], tmp_path)
+    f, = glob.glob(str(tmp_path / 'results' / 'imazur' / 'imazur_qlc_chi4_dtau0.05_*.json'))
+    r = json.load(open(f))
+    assert len(r['points']) == 2 and r['points'][0]['bond'] == 1 and abs(r['points'][0]['JJ'] - 20) < 1e-10
+    assert run([f'{S}/run_imazur.py', '--beta', '0.1', '--canon-every', '0'], tmp_path, ok=False).returncode == 2
+    assert '"part": "iMPS"' in run([f'{S}/benchmark.py', '--part', 'imps', '--chis', '4'], tmp_path).stdout
+
+
 def test_make_jobs(tmp_path):
     jobs = run([f'{S}/make_jobs.py', 'run_mpo.py', '--route', 'direct', 'split', '--beta', '0', '1', '--profile'],
                tmp_path).stdout.strip().splitlines()
