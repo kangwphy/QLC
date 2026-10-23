@@ -45,7 +45,7 @@ python scripts/run_mps.py --route split --L 64 --beta 1 --chi 256 --chi-psi 192 
     --psi-file results/mps/psi_b1_L64.pkl
 
 python scripts/run_imazur.py --beta 0.5 1 2 --chi 64 --threads 8          # 无穷链 iMPS 的 Mazur 下界（笔记 Fig. 2a 的荷族；
-                                                                          # beta >= 3 需 chi >= 128，用 GPU）
+                                                                          # beta >= 3 用 --dtau 0.025、chi 到 256，GPU）
 python scripts/run_mazur.py --beta 0 0.5 1 2 --chi 256 --backend gpu      # 窗口 MPS 的 Mazur 下界（四阶虚时，tau 0.05）
 python scripts/drude.py results/mpo/*.json results/ed/pbc_L*_J_total_*.json
 python scripts/drude.py --richardson run_dt0.05.json run_dt0.025.json

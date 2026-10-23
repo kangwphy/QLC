@@ -131,7 +131,8 @@ $\beta=2$).  Convergence: at $\beta=2$
 $\chi=192$ and $256$ agree to $3\times10^{-7}$ (at $\beta\le1$ the bond is below 192 in both runs);
 $\tau=0.05\to0.025$ changes $M/D_{\rm GHD}$ by $4\times10^{-5}$ at $\beta=1$ and $4\times10^{-6}$ at $\beta=2$.  With the odd
 parts $Q^{\gamma,-}$ the bound reaches $D_{\rm GHD}(\beta)$ to $\le10^{-4}$ for $\beta\le2$ and lies within $4\times10^{-5}$ of
-the infinite-chain value of the same family (at $\beta=0.5$ the deficit is $2.4\times10^{-5}$; at $\beta=1$ it is
+the infinite-chain value of the same family at the same regularization (unit diagonal, $10^{-10}$; $5.6\times10^{-5}$ for
+the production values above; at $\beta=0.5$ the deficit is $2.4\times10^{-5}$; at $\beta=1$ it is
 $8\times10^{-6}$ only with $\tau=0.025$).  At $\beta=0$, $M=18.60270017$ against $M^\star=18.60270784$ (the family value
 with $Q_1$ is $18.60270024$).  The range at $\beta=2$ is the dependence on the eigenvalue cutoff ($2.5\times10^{-6}$ to
 $10^{-8}$).
@@ -160,8 +161,8 @@ sign `_sort_word`), the default family, `mazur_value` with its cutoff list, and 
   $\beta/2$.  Each layer is a Hastings-type three-site update of the right-canonical tensors (no inverse Schmidt values);
   after every $S_4$ step (`--canon-every`) the exact canonical form is restored from the dominant fixed points of the cell
   transfer matrix.  Checks: the error of $E/N$ falls by 16 per halving of `dtau` ($5\times10^{-7}$ at `dtau` 0.05, $\beta=0.4$);
-  $E/N$ and $\langle H,H\rangle$ agree with the free-fermion values (`theory.thermal_energy`) to $\le3\times10^{-7}$ at
-  $\beta\le2$, $\chi=32$.
+  $E/N$ and $\langle H,H\rangle$ agree with the free-fermion values (`theory.thermal_energy`) to $\le3\times10^{-7}$ and
+  $4\times10^{-7}$ at $\beta\le2$, $\chi=32$.
 * **Charges as Pauli MPOs.**  An ordered product $h_S$ is the Pauli string $\prod_kX^{n_{k-2}}Z^{n_{k-1}\oplus n_k}$ (no
   phase), so the automaton of a charge's word rule is an MPO whose bond state is the automaton state: bond 7 for a parity
   part (IDLE plus three states per sign $\eta$), tries for the local patterns ($Q_2$: 19).  IDLE form: $W_0$ (no word
@@ -209,12 +210,13 @@ $^*$ The note drops $Q_2$ at $\beta=6,8$ (TBA without $Q_2$: 0.948792 / 0.999744
 At the published settings (`--dtau 0.1`; $\chi=64$ for $\beta\le4$ and 128 at $\beta=6,8$, without $Q_2$ there) the
 iMPS reproduces the published values: 0.979658 / 0.9999680 ($\beta=1$) and 0.934991 / 0.9999360 ($\beta=2$) to
 $10^{-6}$, and $\beta=3$, 4, 6, 8 to $10^{-5}$–$2\times10^{-4}$ (at $\beta=8$: 0.937496 / 1.00176 against
-0.937496 / 1.00157).  The offsets of the published values from the TBA are therefore Trotter errors of `dtau 0.1` and,
-at $\beta=4$ and 8, truncation at $\chi=64$ and 128; at $\beta=0.3,0.4$ the published values lie $2$–$7\times10^{-6}$
+0.937496 / 1.00157).  The offsets of the published values from the TBA are therefore Trotter errors of `dtau 0.1` and
+truncation at $\chi=64$ ($\beta=4$, and $\beta=3$ in the even column) and $\chi=128$ ($\beta=8$); differences of up to
+$2\times10^{-4}$ at the published settings remain unexplained, and at $\beta=0.3,0.4$ the published values lie $2$–$7\times10^{-6}$
 below both the iMPS and the TBA (cause not identified).  At low temperature use `--dtau 0.025` and a $\chi$ sequence:
 `dtau 0.05` leaves Trotter errors of $6\times10^{-6}$ ($\beta=3$) to $4\times10^{-5}$ ($\beta=8$); at `dtau 0.025` the
-values converge in $\chi$ onto the TBA (at $\beta=6$: 0.9998681, 0.9998897, 0.9999002 for $\chi=128$, 192, 256 against
-0.9999024), while $\chi=128$ still overshoots at $\beta=8$ (1.00044).  $G$ is ill-conditioned there (smallest relative
+values converge in $\chi$ at $\beta=4$ and approach the TBA at $\beta=6$ (0.9998681, 0.9998897, 0.9999002 for $\chi=128$,
+192, 256 against 0.9999024, still changing by $10^{-5}$), while $\chi=128$ still overshoots at $\beta=8$ (1.00044).  $G$ is ill-conditioned there (smallest relative
 eigenvalue $1.7\times10^{-8}$ at $\beta=6$, $4\times10^{-9}$ at $\beta=8$).  $E/N$ and $\langle H,H\rangle$ stay within
 $3\times10^{-7}$ and $4\times10^{-7}$ of the exact values in all `--dtau 0.05` runs, so they do not detect these errors
 of $M$.  At $\beta=3$ the family is $1.9\times10^{-4}$ below $D_{\rm GHD}$ (iMPS and TBA), not within $10^{-4}$ as stated
@@ -243,7 +245,7 @@ one transfer-matrix pair $\langle Q_a,Q_b\rangle$):
 | H100 NVL (torch) | 0.42 s / 0.05 s | 1.0 s / 0.11 s | 3.2 s / 0.47 s | 11.1 s / 3.7 s |
 
 A $\beta$ point of the 19-charge family needs 211 pairs: 6–8 min at $\chi=64$ and about 40 min at $\chi=128$ on 12
-CPU threads; on one H100 the measurement takes 3–3.5 min at $\chi=128$ and 14–20 min at $\chi=256$.  The script defaults to one thread; `--threads` must not exceed the allocated cores (oversubscribed BLAS threads made
+CPU threads; on one H100 the measurement takes 2–3.5 min at $\chi=128$ and 14–20 min at $\chi=256$.  The script defaults to one thread; `--threads` must not exceed the allocated cores (oversubscribed BLAS threads made
 the code about 100 times slower in our runs).
 
 ## 6. Drude weight from $C_J(t)$ (`qlc.analysis`)

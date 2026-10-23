@@ -74,7 +74,7 @@ python scripts/run_mps.py --route split --L 64 --beta 1 --chi 256 --chi-psi 192 
 
 # static Mazur bound at several temperatures (one imaginary-time trajectory)
 python scripts/run_imazur.py --beta 0.5 1 2 --chi 64 --threads 8           # infinite chain (iMPS), family of Fig. 2a
-                                                                           # (beta >= 3: chi >= 128, GPU)
+                                                                           # (beta >= 3: --dtau 0.025, chi up to 256, GPU)
 python scripts/run_mazur.py --beta 0 0.5 1 2 --chi 256 --backend gpu       # window MPS, 4th-order imaginary time
 
 # Drude weight from the outputs (+ Richardson extrapolation of two dt)
